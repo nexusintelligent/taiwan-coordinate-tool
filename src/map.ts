@@ -45,7 +45,7 @@ const vector = new VectorLayer({
 });
 
 export function createMap(target: HTMLElement): Map {
-  return new Map({
+  const map = new Map({
     target,
     layers: [emap, photo, vector],
     view: new View({
@@ -53,6 +53,12 @@ export function createMap(target: HTMLElement): Map {
       zoom: 7.5,
     }),
   });
+
+  const resizeObserver = new ResizeObserver(() => map.updateSize());
+  resizeObserver.observe(target);
+  requestAnimationFrame(() => map.updateSize());
+
+  return map;
 }
 
 export function setBaseMap(type: "emap" | "photo"): void {
