@@ -75,6 +75,9 @@ td small { display:block; max-width:135px; overflow:hidden; color:#84908b; text-
 .editor-card label + label { margin-top:9px; }
 .history-bar { display:flex; gap:5px; margin-bottom:8px; }
 .history-bar button,.layer-actions button { padding:6px 8px; color:var(--green); background:#f3f1e9; border:1px solid #bec5c0; border-radius:3px; font-size:9px; }
+.icon-toolbar { align-items:center; }
+.icon-button { width:34px; height:32px; display:inline-grid; place-items:center; padding:0 !important; font-size:15px !important; font-weight:800; line-height:1; }
+.icon-button:hover { color:#fff; background:var(--green); border-color:var(--green); }
 .tool-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin-bottom:12px; }
 .tool-button { padding:8px 3px; color:#52615c; background:#eff0eb; border:1px solid #c6cbc6; border-radius:3px; font-size:10px; }
 .tool-button.active { color:#fff; background:var(--green); border-color:var(--green); }
@@ -140,6 +143,14 @@ td small { display:block; max-width:135px; overflow:hidden; color:#84908b; text-
 .map-tooltip:empty { display:none; }
 .map-tooltip strong { color:var(--gold); }
 .map-tooltip span { font-size:10px; }
+.context-menu { position:fixed; z-index:10000; width:218px; padding:5px; background:#fffdf7; border:1px solid #aeb8b2; border-radius:5px; box-shadow:0 12px 32px rgba(16,59,53,.25); }
+.context-menu[hidden] { display:none; }
+.context-menu button { width:100%; display:grid; grid-template-columns:25px 1fr; align-items:center; gap:5px; padding:8px 9px; color:#25443e; background:transparent; border:0; border-radius:3px; text-align:left; font-size:10px; }
+.context-menu button:hover:not(:disabled) { color:#fff; background:var(--green); }
+.context-menu button:disabled { color:#a8afab; cursor:not-allowed; }
+.context-menu button.danger { color:#a94332; }
+.context-menu button.danger:hover { color:#fff; background:#a94332; }
+.context-menu button span { text-align:center; font-size:13px; }
 .ol-attribution { font-size:9px; }
 
 footer { display:flex; justify-content:space-between; gap:30px; padding:16px 28px; color:#c8d6d1; background:#0b2e29; font-size:10px; }
