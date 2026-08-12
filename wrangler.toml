@@ -1,0 +1,6 @@
+name = "zhilian-geodesk-tbn"
+main = "worker/tbn-proxy.js"
+compatibility_date = "2026-08-11"
+
+[observability]
+enabled = true

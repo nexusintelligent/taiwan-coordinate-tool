@@ -14,6 +14,24 @@
 - GeoJSON 匯入與匯出，方便與 QGIS 交換資料
 - 座標轉換與圖資編輯分頁，地圖維持同步檢核
 
+## v0.4 空間分析與 TBN
+
+- Buffer 環域分析，支援點、線、面及公尺／公里
+- 面圖徵聯集、交集與差集
+- 工作圖層群組、顯示控制、目前圖層與拖曳排序
+- 復原、重做、取消編輯、取消上一繪製點、全選、複製、貼上與刪除快捷鍵
+- TBN v2.6 公開觀測紀錄查詢、地圖圖層與生態摘要
+
+### TBN 瀏覽器代理
+
+TBN API目前未提供瀏覽器CORS標頭，因此公開GitHub Pages不可直接讀取。`worker/tbn-proxy.js` 提供限定來源、限定查詢參數及五分鐘快取的Cloudflare Worker代理。部署後在建置環境設定：
+
+```text
+VITE_TBN_PROXY=https://你的-worker.workers.dev/
+```
+
+本專案只使用不需金鑰的Open API；不得把限制型API金鑰寫入前端或公開儲存庫。
+
 ## 目前功能
 
 - WGS84（EPSG:4326）與 TWD97 / TM2 zone 121（EPSG:3826）雙向轉換
