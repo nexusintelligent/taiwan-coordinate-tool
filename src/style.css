@@ -112,6 +112,10 @@ td small { display:block; max-width:135px; overflow:hidden; color:#84908b; text-
 .feature-row small { color:var(--muted); font-size:8px; }
 .empty-state { margin:0; padding:18px; color:#8a938f; text-align:center; font-size:10px; }
 .analysis-row { display:grid; grid-template-columns:1fr .7fr auto; align-items:end; gap:7px; }
+.quick-buffer { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:9px; }
+.preset-buffer { padding:8px 7px; color:var(--green); background:#eef2ed; border:1px solid #bfc8c1; border-radius:3px; font-size:9px; font-weight:700; }
+.preset-buffer:first-child { box-shadow:inset 3px 0 #123dff; }
+.preset-buffer:last-child { box-shadow:inset 3px 0 #ef2b2d; }
 .analysis-row .small-button { white-space:nowrap; }
 .online-only { color:#28764b !important; background:#e5f3e9; border-radius:999px; padding:3px 7px; }
 .tbn-status { margin-top:10px; padding:8px 9px; color:var(--muted); background:#f0f1ed; border-left:3px solid #aab3ad; font-size:9px; line-height:1.5; }

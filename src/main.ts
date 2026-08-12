@@ -72,16 +72,17 @@ app.innerHTML = `
         </div>
         <div class="editor-card analysis-card">
           <h3>空間分析</h3>
+          <div class="quick-buffer"><button class="preset-buffer" data-distance="100" data-preset="survey-area">建立調查範圍 100 m</button><button class="preset-buffer" data-distance="500" data-preset="inventory-area">建立盤點範圍 500 m</button></div>
           <div class="analysis-row"><label>Buffer 距離<input id="bufferDistance" type="number" min="0.1" step="1" value="1000"></label><label>單位<select id="bufferUnit"><option value="m">公尺</option><option value="km">公里</option></select></label><button id="runBuffer" class="small-button">建立環域</button></div>
           <div class="button-row"><button class="small-button boolean-button" data-operation="union">聯集 Union</button><button class="small-button boolean-button" data-operation="intersect">交集 Intersect</button><button class="small-button boolean-button" data-operation="difference">差集 Difference</button></div>
           <p class="hint">Buffer 可套用於點、線、面；布林運算請按住 Ctrl 選取至少兩個面圖徵，差集以第一個選取圖徵為主體。</p>
         </div>
         <div class="editor-card tbn-card">
           <div class="card-heading"><h3>TBN 生態資料初篩</h3><span class="online-only">需連網</span></div>
-          <p class="hint">以選取圖徵或其環域查詢 TBN v2.6 公開觀測紀錄；敏感物種座標已由 TBN 模糊化。</p>
+          <p class="hint">以選取圖徵或其環域查詢 TBN v2.6 公開觀測紀錄；敏感物種座標已由 TBN 模糊化。單次最多取得 1,000 筆，匯出名錄會依物種彙整。</p>
           <div class="analysis-row"><label>線／點查詢半徑<select id="tbnRadius"><option value="1">1 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option></select></label><label>觀測年份<input id="tbnYears" value="2016~2026"></label></div>
           <label>生物類群<select id="tbnGroup"><option value="">全部類群</option><option value="birds">鳥類</option><option value="mammals">哺乳類</option><option value="amphibians">兩棲類</option><option value="reptiles">爬行類</option><option value="fishes">魚類</option><option value="angiosperms">被子植物</option><option value="ferns">蕨類</option><option value="butterflies">蝶類</option><option value="dragonflies">蜻蛉類</option><option value="otherinsects">其他昆蟲</option></select></label>
-          <div class="button-row"><button id="queryTbn" class="small-button">查詢選取範圍</button><button id="clearTbn" class="ghost-button">清除結果</button></div>
+          <div class="button-row wrap"><button id="queryTbn" class="small-button">查詢選取範圍</button><button id="exportTbnChecklist" class="small-button" disabled>匯出物種名錄 CSV</button><button id="clearTbn" class="ghost-button">清除結果</button></div>
           <div id="tbnStatus" class="tbn-status">尚未查詢。</div>
           <div id="tbnSummary" class="tbn-summary" hidden></div>
         </div>
@@ -98,7 +99,7 @@ app.innerHTML = `
     </aside>
 
     <section class="map-workspace">
-      <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">正射影像</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
+      <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
       <div id="offlineNotice" class="offline-notice" hidden>目前離線：仍可轉換、編輯及匯出，底圖暫停載入。</div>
       <div id="map"><div id="mapTooltip" class="map-tooltip"></div></div>
       <div class="map-status"><span id="cursorCoordinate">游標座標：—</span><span>專案基準：TWD97 / TM2 zone 121 · EPSG:3826</span></div>
@@ -245,6 +246,12 @@ async function runBuffer(): Promise<void> {
   catch (error) { alert((error as Error).message); }
 }
 
+async function runPresetBuffer(distance: number, preset: FeaturePreset): Promise<void> {
+  const feature = selectedGeoFeatures()[0]; if (!feature) { alert("請先選取工程線位或工程範圍。"); return; }
+  try { const { bufferGeometry } = await import("./spatial"); const result = bufferGeometry(feature, distance); const presetInfo = featurePresets[preset]; addGeoFeature(result, { preset, presetLabel: presetInfo.label, name: presetInfo.label.replace(/（.*）/, ""), note: `由選取圖徵建立 ${distance} 公尺環域`, layerId: "analysis" }); recordState(`建立 ${distance} m 環域`); renderFeatureList(); populateProperties(selectedFeature()); }
+  catch (error) { alert((error as Error).message); }
+}
+
 async function runBoolean(operation: BooleanOperation): Promise<void> {
   try { const { booleanGeometry } = await import("./spatial"); const result = booleanGeometry(selectedGeoFeatures(), operation); const labels: Record<BooleanOperation, string> = { union: "聯集", intersect: "交集", difference: "差集" }; addGeoFeature(result, { preset: "project-area", presetLabel: featurePresets["project-area"].label, name: `${labels[operation]}結果`, note: `由 ${selectedFeatures().length} 筆圖徵進行${labels[operation]}`, layerId: "analysis" }); recordState(labels[operation]); renderFeatureList(); populateProperties(selectedFeature()); }
   catch (error) { alert((error as Error).message); }
@@ -259,8 +266,8 @@ async function queryTbn(): Promise<void> {
     let spatialKey = ""; let spatialValue = ""; const first = selected[0];
     if (first.geometry.type === "Point") { spatialKey = "circle"; spatialValue = `${first.geometry.coordinates[0]} ${first.geometry.coordinates[1]},${radius}`; }
     else { const { bufferGeometry, polygonQueryValue } = await import("./spatial"); let polygon: PolygonFeature; if (first.geometry.type === "LineString" || first.geometry.type === "MultiLineString") polygon = bufferGeometry(first, radius * 1000); else polygon = first as PolygonFeature; spatialKey = "polygon"; spatialValue = polygonQueryValue(polygon); }
-    const params = new URLSearchParams({ [spatialKey]: spatialValue, limit: "300" }); const years = (<HTMLInputElement>$("#tbnYears")).value.trim(); const group = (<HTMLSelectElement>$("#tbnGroup")).value; if (years) params.set("year", years); if (group) params.set("taxonGroup", group);
-    const response = await fetch(`${proxy}?${params}`); if (!response.ok) throw new Error(`TBN 查詢失敗（HTTP ${response.status}）`); const payload = await response.json(); if (payload.meta?.status !== "SUCCESS") throw new Error("TBN 回傳非成功狀態。"); lastTbnRecords = payload.data || []; const mapped = showTbnRecords(lastTbnRecords); renderTbnSummary(Number(payload.meta.total || lastTbnRecords.length), mapped); status.className = "tbn-status success"; status.textContent = `已取得 ${lastTbnRecords.length} 筆，本次地圖顯示 ${mapped} 筆有座標紀錄。`;
+    const params = new URLSearchParams({ [spatialKey]: spatialValue, limit: "1000" }); const years = (<HTMLInputElement>$("#tbnYears")).value.trim(); const group = (<HTMLSelectElement>$("#tbnGroup")).value; if (years) params.set("year", years); if (group) params.set("taxonGroup", group);
+    const response = await fetch(`${proxy}?${params}`); if (!response.ok) throw new Error(`TBN 查詢失敗（HTTP ${response.status}）`); const payload = await response.json(); if (payload.meta?.status !== "SUCCESS") throw new Error("TBN 回傳非成功狀態。"); lastTbnRecords = payload.data || []; const mapped = showTbnRecords(lastTbnRecords); renderTbnSummary(Number(payload.meta.total || lastTbnRecords.length), mapped); (<HTMLButtonElement>$("#exportTbnChecklist")).disabled = !lastTbnRecords.length; status.className = "tbn-status success"; status.textContent = `已取得 ${lastTbnRecords.length} 筆，本次地圖顯示 ${mapped} 筆有座標紀錄。`;
   } catch (error) { status.className = "tbn-status error"; status.textContent = `${(error as Error).message}；TBN服務可能暫時忙碌，請稍後重試。`; }
   finally { (<HTMLButtonElement>$("#queryTbn")).disabled = false; }
 }
@@ -268,6 +275,16 @@ async function queryTbn(): Promise<void> {
 function renderTbnSummary(total: number, mapped: number): void {
   const species = new Set(lastTbnRecords.map((record) => record.vernacularName || record.simplifiedScientificName).filter(Boolean)); const protectedCount = lastTbnRecords.filter((record) => record.protectedStatusTW).length; const sensitiveCount = lastTbnRecords.filter((record) => record.sensitiveCategory && record.sensitiveCategory !== "無").length; const groups = new Map<string, number>(); lastTbnRecords.forEach((record) => { const key = String(record.taxonGroup || "未分類"); groups.set(key, (groups.get(key) || 0) + 1); }); const topGroups = [...groups.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   const summary = $("#tbnSummary"); (<HTMLElement>summary).hidden = false; summary.innerHTML = `<div><strong>${total.toLocaleString()}</strong><span>符合紀錄</span></div><div><strong>${species.size}</strong><span>本頁物種</span></div><div><strong>${protectedCount}</strong><span>保育類紀錄</span></div><div><strong>${sensitiveCount}</strong><span>模糊化紀錄</span></div><p>地圖座標 ${mapped} 筆 · ${topGroups.map(([name, count]) => `${escapeHtml(name)} ${count}`).join("、")}</p>`;
+}
+
+function csvCell(value: unknown): string { return `"${String(value ?? "").replace(/"/g, '""')}"`; }
+function exportTbnChecklist(): void {
+  if (!lastTbnRecords.length) { alert("目前沒有可匯出的 TBN 查詢結果。"); return; }
+  const grouped = new Map<string, { record: TbnRecord; years: Set<string>; counties: Set<string>; count: number }>();
+  lastTbnRecords.forEach((record) => { const scientific = String(record.simplifiedScientificName || record.scientificName || ""); const vernacular = String(record.vernacularName || ""); const key = `${scientific}|${vernacular}`; const item = grouped.get(key) || { record, years: new Set<string>(), counties: new Set<string>(), count: 0 }; if (record.year) item.years.add(String(record.year)); const place = `${record.county || ""}${record.municipality || ""}`; if (place) item.counties.add(place); item.count++; grouped.set(key, item); });
+  const headers = ["中文名", "學名", "類群", "保育等級", "臺灣紅皮書", "敏感資料", "紀錄年份", "行政區", "資料集", "紀錄筆數", "授權"];
+  const rows = [...grouped.values()].sort((a, b) => String(a.record.taxonGroup || "").localeCompare(String(b.record.taxonGroup || ""), "zh-Hant") || String(a.record.vernacularName || "").localeCompare(String(b.record.vernacularName || ""), "zh-Hant")).map(({ record, years, counties, count }) => [record.vernacularName, record.simplifiedScientificName || record.scientificName, record.taxonGroup, record.protectedStatusTW, record.categoryRedlistTW, record.sensitiveCategory, [...years].sort().join("、"), [...counties].sort().join("、"), record.datasetName, count, record.license]);
+  const csv = `\uFEFF${[headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}`; download(`TBN物種名錄_${new Date().toISOString().slice(0, 10)}.csv`, csv, "text/csv;charset=utf-8");
 }
 
 function download(name: string, content: string, type: string): void { const url = URL.createObjectURL(new Blob([content], { type })); const link = document.createElement("a"); link.href = url; link.download = name; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
@@ -299,8 +316,9 @@ $("#undoButton").addEventListener("click", undo); $("#redoButton").addEventListe
 $("#cancelEdit").addEventListener("click", () => { cancelEditorMode(map); setTool("select"); });
 $("#removeVertex").addEventListener("click", () => { if (!removeLastDrawPoint()) alert("目前沒有正在繪製的線或面圖徵。"); });
 $("#runBuffer").addEventListener("click", runBuffer);
+document.querySelectorAll<HTMLButtonElement>(".preset-buffer").forEach((button) => button.addEventListener("click", () => runPresetBuffer(Number(button.dataset.distance), button.dataset.preset as FeaturePreset)));
 document.querySelectorAll<HTMLButtonElement>(".boolean-button").forEach((button) => button.addEventListener("click", () => runBoolean(button.dataset.operation as BooleanOperation)));
-$("#queryTbn").addEventListener("click", queryTbn); $("#clearTbn").addEventListener("click", () => { clearTbnRecords(); lastTbnRecords = []; $("#tbnStatus").textContent = "已清除 TBN 查詢結果。"; (<HTMLElement>$("#tbnSummary")).hidden = true; });
+$("#queryTbn").addEventListener("click", queryTbn); $("#exportTbnChecklist").addEventListener("click", exportTbnChecklist); $("#clearTbn").addEventListener("click", () => { clearTbnRecords(); lastTbnRecords = []; (<HTMLButtonElement>$("#exportTbnChecklist")).disabled = true; $("#tbnStatus").textContent = "已清除 TBN 查詢結果。"; (<HTMLElement>$("#tbnSummary")).hidden = true; });
 
 $("#addGroup").addEventListener("click", () => { const name = prompt("新群組名稱：", "新群組"); if (!name?.trim()) return; const id = `group-${Date.now()}`; layerGroups.push({ id, name: name.trim(), visible: true, order: layerGroups.length }); renderLayerTree(); });
 $("#addLayer").addEventListener("click", () => { const name = prompt("新圖層名稱：", "新工作圖層"); if (!name?.trim()) return; const groupId = layerGroups[0]?.id || "engineering"; const id = `layer-${Date.now()}`; workLayers.push({ id, name: name.trim(), groupId, visible: true, order: workLayers.length }); activeLayerId = id; applyLayerConfiguration(); });
