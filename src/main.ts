@@ -2,15 +2,16 @@ import "ol/ol.css";
 import "./style.css";
 import type Feature from "ol/Feature";
 import type Geometry from "ol/geom/Geometry";
+import { toLonLat } from "ol/proj";
 import { registerSW } from "virtual:pwa-register";
 import { convertPair, type CoordinateSystem, type ConvertedCoordinate } from "./coordinate";
 import { extractCoordinatePairs } from "./parser";
 import { createTableRows, pointTokens, renderTemplate, replaceCoordinatesInText, templates, type NumberFormatOptions } from "./format";
 import {
   addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteSelected,
-  duplicateSelected, exportGeoJson, featurePresets, featureSummary, fitWorkFeatures, getWorkFeatures, importGeoJson,
+  duplicateSelected, exportGeoJson, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures,
   removeLastDrawPoint, replaceWorkGeoJson, selectAllFeatures, selectFeature, selectedFeature, selectedFeatures,
-  selectedGeoFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, showPoints, showTbnRecords,
+  selectedGeoFeatures, selectLayerFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, showPoints, showTbnRecords,
   toggleFeatureSelection, updateSelected, type EditorMode, type FeaturePreset, type LayerDefinition, type TbnRecord,
 } from "./map";
 import type { BooleanOperation, PolygonFeature } from "./spatial";
@@ -29,7 +30,7 @@ app.innerHTML = `
     <aside class="workbench">
       <section id="coordinateView" class="view-panel">
         <div class="section-title"><span>01</span><div><h2>座標輸入</h2><p>混合文字也能直接辨識</p></div></div>
-        <textarea id="rawInput" spellcheck="false">(1)起點(23.712,120.324)(2)終點(23.708,120.320)</textarea>
+        <textarea id="rawInput" spellcheck="false">智聯工程科技顧問有限公司 24.124337779583556, 120.67646269974776</textarea>
         <div class="inline-controls"><label>輸入類型<select id="inputSystem"><option value="auto">自動判斷</option><option value="wgs84-latlon">WGS84（緯度, 經度）</option><option value="wgs84-lonlat">WGS84（經度, 緯度）</option><option value="twd97">TWD97（X, Y）</option></select></label><button id="sampleButton" class="ghost-button">載入範例</button></div>
         <div id="message" class="message" aria-live="polite"></div>
 
@@ -50,7 +51,7 @@ app.innerHTML = `
         <div class="editor-intro"><span class="qgis-badge">QGIS 工作流</span><h2>輕量圖資編輯</h2><p>依近期工程及生態檢核專案建立的公司圖徵預設。成果可用 GeoJSON 與 QGIS 雙向交換。</p></div>
         <div class="editor-card">
           <h3>繪製與編修</h3>
-          <div class="history-bar"><button id="undoButton" title="Ctrl+Z">↶ 復原</button><button id="redoButton" title="Ctrl+Y">↷ 重做</button><button id="cancelEdit" title="Esc">取消編輯</button><button id="removeVertex" title="Backspace">取消上一點</button></div>
+          <div class="history-bar icon-toolbar" aria-label="編輯歷程"><button id="undoButton" class="icon-button" title="復原（Ctrl+Z）" aria-label="復原">↶</button><button id="redoButton" class="icon-button" title="重做（Ctrl+Y）" aria-label="重做">↷</button><button id="cancelEdit" class="icon-button" title="取消編輯（Esc）" aria-label="取消編輯">✕</button><button id="removeVertex" class="icon-button" title="取消上一點（Backspace）" aria-label="取消上一點">⌫</button></div>
           <div class="tool-grid"><button class="tool-button" data-tool="browse">拖曳圖面</button><button class="tool-button active" data-tool="select">選取</button><button class="tool-button" data-tool="modify">節點編修</button><button class="tool-button" data-tool="point">新增點</button><button class="tool-button" data-tool="line">新增線</button><button class="tool-button" data-tool="polygon">新增面</button></div>
           <label>公司圖徵樣式<select id="featurePreset">${Object.entries(featurePresets).map(([key, item]) => `<option value="${key}">${item.label}</option>`).join("")}</select></label>
           <p id="toolHint" class="hint">點選地圖上的工作圖徵以編輯屬性。</p>
@@ -64,7 +65,7 @@ app.innerHTML = `
         </div>
         <div class="editor-card">
           <div class="card-heading"><h3>工作圖層</h3><span id="featureCount">0 筆圖徵</span></div>
-          <div class="layer-actions"><button id="addGroup">＋群組</button><button id="addLayer">＋圖層</button><label><input id="showWorkLabels" type="checkbox" checked>標籤</label></div>
+          <div class="layer-actions"><button id="addGroup" class="icon-button" title="新增群組" aria-label="新增群組">▣＋</button><button id="addLayer" class="icon-button" title="新增圖層" aria-label="新增圖層">▤＋</button><label><input id="showWorkLabels" type="checkbox" checked>標籤</label></div>
           <div id="layerTree" class="layer-tree"></div>
           <div id="featureList" class="feature-list"><p class="empty-state">尚未建立圖徵</p></div>
           <button id="fitFeatures" class="ghost-button">縮放至全部圖徵</button>
@@ -103,6 +104,7 @@ app.innerHTML = `
       <div class="map-status"><span id="cursorCoordinate">游標座標：—</span><span>專案基準：TWD97 / TM2 zone 121 · EPSG:3826</span></div>
     </section>
   </main>
+  <div id="contextMenu" class="context-menu" role="menu" hidden></div>
   <footer><div><strong>智聯工程科技顧問有限公司</strong><span>工程座標與輕量圖資工作台</span></div><details><summary>免責聲明與版權</summary><p>本工具提供座標整理、圖徵草繪及初步位置檢核，不替代測量、鑑界、設計、法定成果或 QGIS 正式品質管理。使用者應確認座標基準、分帶、資料來源與成果精度。底圖及參考圖資權利依原提供機關公告；連線底圖會向第三方圖資服務提出請求。</p><p>© 2026 智聯工程科技顧問有限公司。第三方套件及圖資依各自授權條款使用。</p></details></footer>`;
 
 const $ = <T extends Element>(selector: string) => document.querySelector<T>(selector)!;
@@ -140,6 +142,9 @@ let undoStack: string[] = [];
 let redoStack: string[] = [];
 let clipboardGeoJson = "";
 let lastTbnRecords: TbnRecord[] = [];
+let contextLayerId = "";
+let contextFeature: Feature<Geometry> | null = null;
+let contextLonLat: [number, number] | null = null;
 
 const map = createMap($("#map") as HTMLDivElement, $("#mapTooltip") as HTMLDivElement, {
   cursor: (lon, lat) => { const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); cursorCoordinate.textContent = `游標：${lat.toFixed(6)}, ${lon.toFixed(6)} · X ${Math.round(twd.x).toLocaleString()} Y ${Math.round(twd.y).toLocaleString()}`; },
@@ -156,6 +161,12 @@ let activeView: "coordinate" | "editor" = "coordinate";
 let editorMode: EditorMode = "select";
 
 function escapeHtml(value: string): string { return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!); }
+function closeContextMenu(): void { (<HTMLElement>$("#contextMenu")).hidden = true; }
+function openContextMenu(event: MouseEvent, items: Array<{ action: string; icon: string; label: string; danger?: boolean; disabled?: boolean }>): void {
+  event.preventDefault(); const menu = $("#contextMenu") as HTMLElement;
+  menu.innerHTML = items.map((item) => `<button role="menuitem" data-context-action="${item.action}" class="${item.danger ? "danger" : ""}" ${item.disabled ? "disabled" : ""}><span aria-hidden="true">${item.icon}</span>${escapeHtml(item.label)}</button>`).join("");
+  menu.hidden = false; menu.style.left = `${Math.min(event.clientX, window.innerWidth - 230)}px`; menu.style.top = `${Math.min(event.clientY, window.innerHeight - menu.offsetHeight - 12)}px`;
+}
 function numberOptions(): NumberFormatOptions { return { xyDecimals: Number(xyDecimals.value), llDecimals: Number(llDecimals.value), useThousands: thousands.checked }; }
 function tableData(): string[][] { return createTableRows(converted, { ...numberOptions(), useThousands: false }); }
 function tableText(withHeader = includeHeader.checked): string { const rows = tableData(); if (withHeader) rows.unshift(["點位", "WGS84 緯度", "WGS84 經度", "TWD97 X", "TWD97 Y"]); return rows.map((row) => row.join("\t")).join("\n"); }
@@ -271,7 +282,7 @@ document.querySelectorAll<HTMLButtonElement>(".tool-button").forEach((button) =>
 document.querySelectorAll<HTMLButtonElement>(".token-buttons button").forEach((button) => button.addEventListener("click", () => { const target = outputMode === "replace" ? replacementTemplate : templateInput; const start = target.selectionStart ?? target.value.length; target.setRangeText(button.dataset.token!, start, target.selectionEnd ?? start, "end"); target.focus(); updateOutput(); }));
 resultRows.addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-copy]"); if (!button) return; const token = pointTokens(converted[Number(button.dataset.index)], numberOptions()); copyText(`${token.x}\t${token.y}`, button); });
 $("#featureList").addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-feature-index]"); if (!button) return; const feature = getWorkFeatures()[Number(button.dataset.featureIndex)]; if ((event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey) toggleFeatureSelection(feature); else selectFeature(feature); populateProperties(selectedFeature()); });
-$("#sampleButton").addEventListener("click", () => { rawInput.value = "(1)起點(23.712,120.324)(2)終點(23.708,120.320)"; inputSystem.value = "auto"; updateCoordinates(); });
+$("#sampleButton").addEventListener("click", () => { rawInput.value = "智聯工程科技顧問有限公司 24.124337779583556, 120.67646269974776"; inputSystem.value = "auto"; updateCoordinates(); });
 $("#copyExcelTop").addEventListener("click", (event) => copyExcel(event.currentTarget as HTMLButtonElement));
 $("#copyButton").addEventListener("click", (event) => outputMode === "table" ? copyExcel(event.currentTarget as HTMLButtonElement) : copyText(formattedOutput.textContent ?? "", event.currentTarget as HTMLButtonElement));
 $("#baseMap").addEventListener("change", (event) => setBaseMap((event.target as HTMLSelectElement).value as "emap" | "photo"));
@@ -299,6 +310,39 @@ $("#layerTree").addEventListener("click", (event) => { const button = (event.tar
 $("#layerTree").addEventListener("dragstart", (event) => { const element = event.target as HTMLElement; draggedLayerId = element.closest<HTMLElement>("[data-layer-id]")?.dataset.layerId || ""; draggedGroupId = draggedLayerId ? "" : element.closest<HTMLElement>("[data-group-id]")?.dataset.groupId || ""; });
 $("#layerTree").addEventListener("dragover", (event) => event.preventDefault());
 $("#layerTree").addEventListener("drop", (event) => { event.preventDefault(); const target = event.target as HTMLElement; const targetGroup = target.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup || target.closest<HTMLElement>("[data-group-id]")?.dataset.groupId; const targetLayer = target.closest<HTMLElement>("[data-layer-id]")?.dataset.layerId; if (draggedLayerId && targetGroup) { const layer = workLayers.find((item) => item.id === draggedLayerId); if (layer) { layer.groupId = targetGroup; const destination = workLayers.find((item) => item.id === targetLayer); layer.order = destination?.order ?? workLayers.length; workLayers.filter((item) => item.id !== layer.id && item.order >= layer.order).forEach((item) => item.order++); } } else if (draggedGroupId && targetGroup && draggedGroupId !== targetGroup) { const source = layerGroups.find((item) => item.id === draggedGroupId); const destination = layerGroups.find((item) => item.id === targetGroup); if (source && destination) { const old = source.order; source.order = destination.order; destination.order = old; } } draggedLayerId = ""; draggedGroupId = ""; applyLayerConfiguration(); });
+
+$("#layerTree").addEventListener("contextmenu", (event) => {
+  const layerItem = (event.target as HTMLElement).closest<HTMLElement>("[data-layer-id]"); if (!layerItem) return; contextLayerId = layerItem.dataset.layerId!; const layer = workLayers.find((item) => item.id === contextLayerId)!;
+  openContextMenu(event as MouseEvent, [{ action: "activate-layer", icon: "◎", label: "設為作用中圖層" }, { action: "zoom-layer", icon: "⌖", label: "縮放至圖層", disabled: !layerFeatures(contextLayerId).length }, { action: "select-layer", icon: "▣", label: "選取圖層全部圖徵", disabled: !layerFeatures(contextLayerId).length }, { action: "toggle-layer", icon: layer.visible ? "◉" : "○", label: layer.visible ? "隱藏圖層" : "顯示圖層" }, { action: "rename-layer", icon: "✎", label: "重新命名" }]);
+});
+$("#featureList").addEventListener("contextmenu", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-feature-index]"); if (!row) return; contextFeature = getWorkFeatures()[Number(row.dataset.featureIndex)]; selectFeature(contextFeature); populateProperties(contextFeature);
+  openContextMenu(event as MouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]);
+});
+$("#map").addEventListener("contextmenu", (event) => {
+  if (finishDrawing()) { event.preventDefault(); recordState("完成繪製"); renderFeatureList(); return; }
+  const mouseEvent = event as MouseEvent; const pixel = map.getEventPixel(mouseEvent); contextFeature = map.forEachFeatureAtPixel(pixel, (candidate) => candidate as Feature<Geometry>) ?? null; contextLonLat = toLonLat(map.getCoordinateFromPixel(pixel)) as [number, number];
+  if (contextFeature?.get("layerId")) { selectFeature(contextFeature); populateProperties(contextFeature); openContextMenu(mouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製圖徵" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]); return; }
+  openContextMenu(mouseEvent, [{ action: "copy-coordinate", icon: "⊕", label: "複製此處 WGS84／TWD97" }, { action: "add-point-here", icon: "●", label: "在此新增點" }, { action: "paste-feature", icon: "▣", label: "貼上圖徵", disabled: !clipboardGeoJson }, { action: "zoom-all", icon: "⌗", label: "縮放至全部工作圖徵", disabled: !getWorkFeatures().length }]);
+});
+$("#contextMenu").addEventListener("click", async (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-context-action]"); if (!button) return; const action = button.dataset.contextAction!; closeContextMenu();
+  if (action === "activate-layer") { activeLayerId = contextLayerId; setActiveLayer(activeLayerId); renderLayerTree(); }
+  else if (action === "zoom-layer") fitFeatures(map, layerFeatures(contextLayerId));
+  else if (action === "select-layer") { selectLayerFeatures(contextLayerId); populateProperties(selectedFeature()); }
+  else if (action === "toggle-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); if (layer) { layer.visible = !layer.visible; applyLayerConfiguration(); } }
+  else if (action === "rename-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); const name = layer && prompt("圖層名稱：", layer.name); if (layer && name?.trim()) { layer.name = name.trim(); renderLayerTree(); } }
+  else if (action === "zoom-selection" && contextFeature) fitFeatures(map, [contextFeature]);
+  else if (action === "copy-feature" && contextFeature) { selectFeature(contextFeature); clipboardGeoJson = exportGeoJson([contextFeature]); await navigator.clipboard.writeText(clipboardGeoJson); }
+  else if (action === "duplicate-feature" && contextFeature) { selectFeature(contextFeature); if (duplicateSelected()) { recordState("複製圖徵"); renderFeatureList(); } }
+  else if (action === "delete-feature" && contextFeature) { selectFeature(contextFeature); if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } }
+  else if (action === "copy-coordinate" && contextLonLat) { const [lon, lat] = contextLonLat; const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); await navigator.clipboard.writeText(`${lat.toFixed(7)}, ${lon.toFixed(7)}\t${Math.round(twd.x)}, ${Math.round(twd.y)}`); }
+  else if (action === "add-point-here" && contextLonLat) { addGeoFeature({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: contextLonLat } }, { preset: "project-point", presetLabel: featurePresets["project-point"].label, name: "地圖新增點", note: "由地圖右鍵新增", layerId: activeLayerId }); recordState("地圖新增點"); renderFeatureList(); populateProperties(selectedFeature()); }
+  else if (action === "paste-feature" && clipboardGeoJson) { importGeoJson(undefined, clipboardGeoJson); recordState("貼上圖徵"); renderFeatureList(); }
+  else if (action === "zoom-all") fitWorkFeatures(map);
+});
+document.addEventListener("pointerdown", (event) => { if (!(event.target as HTMLElement).closest("#contextMenu")) closeContextMenu(); });
+window.addEventListener("blur", closeContextMenu);
 
 window.addEventListener("keydown", (event) => {
   if (activeView !== "editor" || ["INPUT", "TEXTAREA", "SELECT"].includes((event.target as HTMLElement).tagName)) return;

@@ -106,6 +106,7 @@ export function setEditorMode(map: Map, mode: EditorMode, preset: FeaturePreset,
 }
 export function cancelEditorMode(map: Map): void { if (drawInteraction) { drawInteraction.abortDrawing(); map.removeInteraction(drawInteraction); } if (modifyInteraction) map.removeInteraction(modifyInteraction); if (snapInteraction) map.removeInteraction(snapInteraction); drawInteraction = undefined; modifyInteraction = undefined; snapInteraction = undefined; }
 export function removeLastDrawPoint(): boolean { if (!drawInteraction) return false; drawInteraction.removeLastPoint(); return true; }
+export function finishDrawing(): boolean { if (!drawInteraction) return false; drawInteraction.finishDrawing(); return true; }
 export function selectedFeatures(): Feature<Geometry>[] { return selectInteraction?.getFeatures().getArray() as Feature<Geometry>[] ?? []; }
 export function selectedFeature(): Feature<Geometry> | null { return selectedFeatures()[0] ?? null; }
 export function selectFeature(feature: Feature<Geometry> | null): void { selectInteraction?.getFeatures().clear(); if (feature) selectInteraction?.getFeatures().push(feature); }
@@ -117,6 +118,9 @@ export function duplicateSelected(): number { const clones = selectedFeatures().
 export function clearWorkFeatures(): void { selectInteraction?.getFeatures().clear(); workSource.clear(); }
 export function getWorkFeatures(): Feature<Geometry>[] { return workSource.getFeatures() as Feature<Geometry>[]; }
 export function fitWorkFeatures(map: Map): void { if (workSource.getFeatures().length) { const extent = workSource.getExtent(); if (extent) map.getView().fit(extent, { padding: [70, 70, 70, 70], maxZoom: 18, duration: 350 }); } }
+export function fitFeatures(map: Map, features: Feature<Geometry>[]): void { if (!features.length) return; const source = new VectorSource({ features }); const extent = source.getExtent(); if (extent) map.getView().fit(extent, { padding: [70, 70, 70, 70], maxZoom: 18, duration: 350 }); }
+export function layerFeatures(layerId: string): Feature<Geometry>[] { return getWorkFeatures().filter((feature) => feature.get("layerId") === layerId); }
+export function selectLayerFeatures(layerId: string): void { selectInteraction?.getFeatures().clear(); selectInteraction?.getFeatures().extend(layerFeatures(layerId)); }
 export function exportGeoJson(features: Feature<Geometry>[] = getWorkFeatures()): string { return format.writeFeatures(features, { featureProjection: "EPSG:3857", dataProjection: "EPSG:4326", decimals: 7 }); }
 export function selectedGeoFeatures(): GeoFeature<GeoGeometry>[] { return JSON.parse(exportGeoJson(selectedFeatures())).features; }
 export function replaceWorkGeoJson(text: string): void { clearWorkFeatures(); importGeoJson(undefined, text); }
