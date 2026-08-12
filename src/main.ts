@@ -9,7 +9,7 @@ import { extractCoordinatePairs } from "./parser";
 import { createTableRows, pointTokens, renderTemplate, replaceCoordinatesInText, templates, type NumberFormatOptions } from "./format";
 import {
   addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteSelected,
-  duplicateSelected, exportGeoJson, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures, locateMap,
+  duplicateSelected, exportGeoJson, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures,
   removeLastDrawPoint, replaceWorkGeoJson, selectAllFeatures, selectFeature, selectedFeature, selectedFeatures,
   selectedGeoFeatures, selectLayerFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, showPoints, showTbnRecords,
   toggleFeatureSelection, updateSelected, type EditorMode, type FeaturePreset, type LayerDefinition, type TbnRecord,
@@ -80,7 +80,7 @@ app.innerHTML = `
         <div class="editor-card tbn-card">
           <div class="card-heading"><h3>TBN 生態資料初篩</h3><span class="online-only">需連網</span></div>
           <p class="hint">以選取圖徵或其環域查詢 TBN v2.6 公開觀測紀錄；敏感物種座標已由 TBN 模糊化。單次最多取得 1,000 筆，匯出名錄會依物種彙整。</p>
-          <div class="analysis-row"><label>線／點查詢半徑<select id="tbnRadius"><option value="0.1">100 m</option><option value="0.5">500 m</option><option value="1">1 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option></select></label><label>觀測年份<input id="tbnYears" value="2016~2026"></label></div>
+          <div class="analysis-row"><label>線／點查詢半徑<select id="tbnRadius"><option value="1">1 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option></select></label><label>觀測年份<input id="tbnYears" value="2016~2026"></label></div>
           <label>生物類群<select id="tbnGroup"><option value="">全部類群</option><option value="birds">鳥類</option><option value="mammals">哺乳類</option><option value="amphibians">兩棲類</option><option value="reptiles">爬行類</option><option value="fishes">魚類</option><option value="angiosperms">被子植物</option><option value="ferns">蕨類</option><option value="butterflies">蝶類</option><option value="dragonflies">蜻蛉類</option><option value="otherinsects">其他昆蟲</option></select></label>
           <div class="button-row wrap"><button id="queryTbn" class="small-button">查詢選取範圍</button><button id="exportTbnChecklist" class="small-button" disabled>匯出物種名錄 CSV</button><button id="clearTbn" class="ghost-button">清除結果</button></div>
           <div id="tbnStatus" class="tbn-status">尚未查詢。</div>
@@ -99,7 +99,7 @@ app.innerHTML = `
     </aside>
 
     <section class="map-workspace">
-      <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-toolbar" aria-label="地圖工具列"><button data-map-tool="browse" title="拖曳圖面">✋</button><button data-map-tool="select" title="選取圖徵">⌖</button><button id="toolbarZoomAll" title="縮放至全部圖徵">⛶</button><button id="toolbarUndo" title="復原 Ctrl+Z">↶</button><button id="toolbarRedo" title="重做 Ctrl+Y">↷</button><button id="toolbarDelete" title="刪除選取圖徵">⌫</button></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
+      <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
       <div id="offlineNotice" class="offline-notice" hidden>目前離線：仍可轉換、編輯及匯出，底圖暫停載入。</div>
       <div id="map"><div id="mapTooltip" class="map-tooltip"></div></div>
       <div class="map-locator"><label for="locateInput">定位到：</label><input id="locateInput" placeholder="輸入經緯度或 TWD97 X, Y"><button id="locateButton">定位</button><span id="locateMessage">例：24.1243378, 120.6764627</span></div>
@@ -149,7 +149,6 @@ let lastTbnRecords: TbnRecord[] = [];
 let contextLayerId = "";
 let contextFeature: Feature<Geometry> | null = null;
 let contextLonLat: [number, number] | null = null;
-const SESSION_KEY = "zhilian-geodesk-session-v1";
 
 const map = createMap($("#map") as HTMLDivElement, $("#mapTooltip") as HTMLDivElement, {
   cursor: (lon, lat) => { const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); cursorCoordinate.textContent = `游標：${lat.toFixed(6)}, ${lon.toFixed(6)} · X ${Math.round(twd.x).toLocaleString()} Y ${Math.round(twd.y).toLocaleString()}`; },
@@ -166,8 +165,6 @@ let activeView: "coordinate" | "editor" = "coordinate";
 let editorMode: EditorMode = "select";
 
 function escapeHtml(value: string): string { return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!); }
-function saveSession(): void { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ version: 1, geojson: exportGeoJson(), layerGroups, workLayers, activeLayerId, showWorkLabels: (<HTMLInputElement>$("#showWorkLabels")).checked })); } catch (error) { console.warn("無法保存工作階段", error); } }
-function restoreSession(): boolean { try { const saved = localStorage.getItem(SESSION_KEY); if (!saved) return false; const state = JSON.parse(saved); if (!Array.isArray(state.layerGroups) || !Array.isArray(state.workLayers) || typeof state.geojson !== "string") return false; layerGroups = state.layerGroups; workLayers = state.workLayers; activeLayerId = state.activeLayerId || workLayers[0]?.id || "project"; (<HTMLInputElement>$("#showWorkLabels")).checked = state.showWorkLabels !== false; replaceWorkGeoJson(state.geojson); applyLayerConfiguration(); return true; } catch (error) { console.warn("無法還原工作階段", error); return false; } }
 function closeContextMenu(): void { (<HTMLElement>$("#contextMenu")).hidden = true; }
 function openContextMenu(event: MouseEvent, items: Array<{ action: string; icon: string; label: string; danger?: boolean; disabled?: boolean }>): void {
   event.preventDefault(); const menu = $("#contextMenu") as HTMLElement;
@@ -304,6 +301,7 @@ document.querySelectorAll<HTMLButtonElement>(".mode-tab").forEach((button) => bu
 document.querySelectorAll<HTMLButtonElement>(".tool-button").forEach((button) => button.addEventListener("click", () => setTool(button.dataset.tool as EditorMode)));
 document.querySelectorAll<HTMLButtonElement>(".token-buttons button").forEach((button) => button.addEventListener("click", () => { const target = outputMode === "replace" ? replacementTemplate : templateInput; const start = target.selectionStart ?? target.value.length; target.setRangeText(button.dataset.token!, start, target.selectionEnd ?? start, "end"); target.focus(); updateOutput(); }));
 resultRows.addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-copy]"); if (!button) return; const token = pointTokens(converted[Number(button.dataset.index)], numberOptions()); copyText(`${token.x}\t${token.y}`, button); });
+$("#featureList").addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-feature-index]"); if (!button) return; const feature = getWorkFeatures()[Number(button.dataset.featureIndex)]; if ((event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey) toggleFeatureSelection(feature); else selectFeature(feature); populateProperties(selectedFeature()); });
 $("#sampleButton").addEventListener("click", () => { rawInput.value = "智聯工程科技顧問有限公司 24.124337779583556, 120.67646269974776"; inputSystem.value = "auto"; updateCoordinates(); });
 $("#copyExcelTop").addEventListener("click", (event) => copyExcel(event.currentTarget as HTMLButtonElement));
 $("#copyButton").addEventListener("click", (event) => outputMode === "table" ? copyExcel(event.currentTarget as HTMLButtonElement) : copyText(formattedOutput.textContent ?? "", event.currentTarget as HTMLButtonElement));
@@ -348,6 +346,39 @@ $("#layerTree").addEventListener("contextmenu", (event) => {
   openContextMenu(event as MouseEvent, [{ action: "activate-layer", icon: "◎", label: "設為作用中圖層" }, { action: "zoom-layer", icon: "⌖", label: "縮放至圖層", disabled: !layerFeatures(contextLayerId).length }, { action: "select-layer", icon: "▣", label: "選取圖層全部圖徵", disabled: !layerFeatures(contextLayerId).length }, { action: "toggle-layer", icon: layer.visible ? "◉" : "○", label: layer.visible ? "隱藏圖層" : "顯示圖層" }, { action: "rename-layer", icon: "✎", label: "重新命名" }]);
 });
 $("#layerTree").addEventListener("contextmenu", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-feature-index]"); if (!row) return; contextFeature = getWorkFeatures()[Number(row.dataset.featureIndex)]; selectFeature(contextFeature); populateProperties(contextFeature);
+  openContextMenu(event as MouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]);
+});
+$("#map").addEventListener("contextmenu", (event) => {
+  if (finishDrawing()) { event.preventDefault(); recordState("完成繪製"); renderFeatureList(); return; }
+  const mouseEvent = event as MouseEvent; const pixel = map.getEventPixel(mouseEvent); contextFeature = map.forEachFeatureAtPixel(pixel, (candidate) => candidate as Feature<Geometry>) ?? null; contextLonLat = toLonLat(map.getCoordinateFromPixel(pixel)) as [number, number];
+  if (contextFeature?.get("layerId")) { selectFeature(contextFeature); populateProperties(contextFeature); openContextMenu(mouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製圖徵" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]); return; }
+  openContextMenu(mouseEvent, [{ action: "copy-coordinate", icon: "⊕", label: "複製此處 WGS84／TWD97" }, { action: "add-point-here", icon: "●", label: "在此新增點" }, { action: "paste-feature", icon: "▣", label: "貼上圖徵", disabled: !clipboardGeoJson }, { action: "zoom-all", icon: "⌗", label: "縮放至全部工作圖徵", disabled: !getWorkFeatures().length }]);
+});
+$("#contextMenu").addEventListener("click", async (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-context-action]"); if (!button) return; const action = button.dataset.contextAction!; closeContextMenu();
+  if (action === "activate-layer") { activeLayerId = contextLayerId; setActiveLayer(activeLayerId); renderLayerTree(); }
+  else if (action === "zoom-layer") fitFeatures(map, layerFeatures(contextLayerId));
+  else if (action === "select-layer") { selectLayerFeatures(contextLayerId); populateProperties(selectedFeature()); }
+  else if (action === "toggle-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); if (layer) { layer.visible = !layer.visible; applyLayerConfiguration(); } }
+  else if (action === "rename-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); const name = layer && prompt("圖層名稱：", layer.name); if (layer && name?.trim()) { layer.name = name.trim(); renderLayerTree(); } }
+  else if (action === "zoom-selection" && contextFeature) fitFeatures(map, [contextFeature]);
+  else if (action === "copy-feature" && contextFeature) { selectFeature(contextFeature); clipboardGeoJson = exportGeoJson([contextFeature]); await navigator.clipboard.writeText(clipboardGeoJson); }
+  else if (action === "duplicate-feature" && contextFeature) { selectFeature(contextFeature); if (duplicateSelected()) { recordState("複製圖徵"); renderFeatureList(); } }
+  else if (action === "delete-feature" && contextFeature) { selectFeature(contextFeature); if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } }
+  else if (action === "copy-coordinate" && contextLonLat) { const [lon, lat] = contextLonLat; const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); await navigator.clipboard.writeText(`${lat.toFixed(7)}, ${lon.toFixed(7)}\t${Math.round(twd.x)}, ${Math.round(twd.y)}`); }
+  else if (action === "add-point-here" && contextLonLat) { addGeoFeature({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: contextLonLat } }, { preset: "project-point", presetLabel: featurePresets["project-point"].label, name: "地圖新增點", note: "由地圖右鍵新增", layerId: activeLayerId }); recordState("地圖新增點"); renderFeatureList(); populateProperties(selectedFeature()); }
+  else if (action === "paste-feature" && clipboardGeoJson) { importGeoJson(undefined, clipboardGeoJson); recordState("貼上圖徵"); renderFeatureList(); }
+  else if (action === "zoom-all") fitWorkFeatures(map);
+});
+document.addEventListener("pointerdown", (event) => { if (!(event.target as HTMLElement).closest("#contextMenu")) closeContextMenu(); });
+window.addEventListener("blur", closeContextMenu);
+
+$("#layerTree").addEventListener("contextmenu", (event) => {
+  const layerItem = (event.target as HTMLElement).closest<HTMLElement>("[data-layer-id]"); if (!layerItem) return; contextLayerId = layerItem.dataset.layerId!; const layer = workLayers.find((item) => item.id === contextLayerId)!;
+  openContextMenu(event as MouseEvent, [{ action: "activate-layer", icon: "◎", label: "設為作用中圖層" }, { action: "zoom-layer", icon: "⌖", label: "縮放至圖層", disabled: !layerFeatures(contextLayerId).length }, { action: "select-layer", icon: "▣", label: "選取圖層全部圖徵", disabled: !layerFeatures(contextLayerId).length }, { action: "toggle-layer", icon: layer.visible ? "◉" : "○", label: layer.visible ? "隱藏圖層" : "顯示圖層" }, { action: "rename-layer", icon: "✎", label: "重新命名" }]);
+});
+$("#featureList").addEventListener("contextmenu", (event) => {
   const row = (event.target as HTMLElement).closest<HTMLElement>("[data-feature-index]"); if (!row) return; contextFeature = getWorkFeatures()[Number(row.dataset.featureIndex)]; selectFeature(contextFeature); populateProperties(contextFeature);
   openContextMenu(event as MouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]);
 });
