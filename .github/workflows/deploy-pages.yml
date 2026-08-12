@@ -40,6 +40,8 @@ jobs:
         run: pnpm test
 
       - name: Build
+        env:
+          VITE_TBN_PROXY: ${{ vars.VITE_TBN_PROXY }}
         run: pnpm build
 
       - name: Configure Pages
