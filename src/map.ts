@@ -23,15 +23,22 @@ import type { Feature as GeoFeature, Geometry as GeoGeometry } from "geojson";
 import type { ConvertedCoordinate } from "./coordinate";
 
 export type EditorMode = "browse" | "select" | "modify" | "point" | "line" | "polygon";
-export type FeaturePreset = "project-point" | "project-line" | "project-area" | "survey-area" | "impact-area" | "tbn-point" | "other-point";
+export type FeaturePreset = "project-point" | "project-line" | "project-area" | "survey-area" | "inventory-area" | "impact-area" | "habitat-built" | "habitat-water" | "habitat-farmland" | "sensitivity-low" | "sensitivity-medium" | "sensitivity-high" | "tbn-point" | "other-point";
 export interface LayerDefinition { id: string; name: string; groupId: string; visible: boolean; order: number; }
 
-export const featurePresets: Record<FeaturePreset, { label: string; geometry: "Point" | "LineString" | "Polygon"; color: string }> = {
+export const featurePresets: Record<FeaturePreset, { label: string; geometry: "Point" | "LineString" | "Polygon"; color: string; strokeWidth?: number; lineDash?: number[]; fillColor?: string }> = {
   "project-point": { label: "智聯工程點位", geometry: "Point", color: "#ff9e17" },
-  "project-line": { label: "工程線位", geometry: "LineString", color: "#becf50" },
-  "project-area": { label: "工程範圍", geometry: "Polygon", color: "#e77148" },
-  "survey-area": { label: "生態調查範圍", geometry: "Polygon", color: "#85b66f" },
+  "project-line": { label: "工程計畫範圍（橘線 0.66 mm）", geometry: "LineString", color: "#ff9800", strokeWidth: 2.5 },
+  "project-area": { label: "工程範圍（橘線 0.66 mm）", geometry: "Polygon", color: "#ff9800", strokeWidth: 2.5, fillColor: "rgba(255,152,0,.06)" },
+  "survey-area": { label: "調查範圍 100 m（藍線 0.46 mm）", geometry: "Polygon", color: "#123dff", strokeWidth: 1.75, fillColor: "rgba(18,61,255,.04)" },
+  "inventory-area": { label: "盤點範圍 500 m（紅色虛線 0.46 mm）", geometry: "Polygon", color: "#ef2b2d", strokeWidth: 1.75, lineDash: [8, 5], fillColor: "rgba(239,43,45,.025)" },
   "impact-area": { label: "1 km 影響範圍", geometry: "Polygon", color: "#e5b636" },
+  "habitat-built": { label: "棲地－建成地區", geometry: "Polygon", color: "#777777", strokeWidth: 1, fillColor: "rgba(119,119,119,.78)" },
+  "habitat-water": { label: "棲地－流動水域", geometry: "Polygon", color: "#5f80e8", strokeWidth: 1, fillColor: "rgba(95,128,232,.72)" },
+  "habitat-farmland": { label: "棲地－農牧用地", geometry: "Polygon", color: "#c9d86b", strokeWidth: 1, fillColor: "rgba(201,216,107,.68)" },
+  "sensitivity-low": { label: "生態敏感度－低度", geometry: "Polygon", color: "#9bd27d", strokeWidth: 1, fillColor: "rgba(155,210,125,.55)" },
+  "sensitivity-medium": { label: "生態敏感度－中度", geometry: "Polygon", color: "#fff59a", strokeWidth: 1, fillColor: "rgba(255,245,154,.62)" },
+  "sensitivity-high": { label: "生態敏感度－高度", geometry: "Polygon", color: "#ed7777", strokeWidth: 1, fillColor: "rgba(237,119,119,.58)" },
   "tbn-point": { label: "TBN 點位", geometry: "Point", color: "#8d5a99" },
   "other-point": { label: "其他單位案件", geometry: "Point", color: "#729b6f" },
 };
@@ -60,8 +67,8 @@ function workStyle(featureLike: FeatureLike): Style | undefined {
   const presetKey = (feature.get("preset") || "project-area") as FeaturePreset; const preset = featurePresets[presetKey] ?? featurePresets["project-area"]; const geometry = feature.getGeometry(); const text = display.workLabels ? labelStyle(feature.get("name") || preset.label) : undefined;
   const zIndex = 1000 - (layer?.order ?? 500); let style: Style;
   if (geometry instanceof Point) style = new Style({ image: new Circle({ radius: presetKey === "tbn-point" ? 6 : 8, fill: new Fill({ color: preset.color }), stroke: new Stroke({ color: "#ffffff", width: 2 }) }), text });
-  else if (geometry instanceof LineString) style = new Style({ stroke: new Stroke({ color: preset.color, width: 4 }), text });
-  else { const alpha = presetKey === "impact-area" ? "2b" : "45"; style = new Style({ fill: new Fill({ color: `${preset.color}${alpha}` }), stroke: new Stroke({ color: preset.color, width: presetKey === "impact-area" ? 2 : 3, lineDash: presetKey === "impact-area" ? [9, 6] : undefined }), text }); }
+  else if (geometry instanceof LineString) style = new Style({ stroke: new Stroke({ color: preset.color, width: preset.strokeWidth ?? 4, lineDash: preset.lineDash }), text });
+  else { const alpha = presetKey === "impact-area" ? "2b" : "45"; style = new Style({ fill: new Fill({ color: preset.fillColor ?? `${preset.color}${alpha}` }), stroke: new Stroke({ color: preset.color, width: preset.strokeWidth ?? (presetKey === "impact-area" ? 2 : 3), lineDash: preset.lineDash ?? (presetKey === "impact-area" ? [9, 6] : undefined) }), text }); }
   style.setZIndex(zIndex); return style;
 }
 
