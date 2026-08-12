@@ -48,6 +48,7 @@ const photo = new TileLayer({ source: new XYZ({ url: "https://wmts.nlsc.gov.tw/w
 const resultSource = new VectorSource();
 const workSource = new VectorSource();
 const tbnSource = new VectorSource();
+const locateSource = new VectorSource();
 const format = new GeoJSON();
 const display = { results: true, resultLabels: true, resultLine: true, work: true, workLabels: true, tbn: true };
 let layerDefinitions: LayerDefinition[] = [];
@@ -76,12 +77,13 @@ function tbnStyle(featureLike: FeatureLike): Style | undefined { if (!display.tb
 const resultLayer = new VectorLayer({ source: resultSource, style: resultStyle, zIndex: 20 });
 const workLayer = new VectorLayer({ source: workSource, style: workStyle, zIndex: 30 });
 const tbnLayer = new VectorLayer({ source: tbnSource, style: tbnStyle, zIndex: 40 });
+const locateLayer = new VectorLayer({ source: locateSource, zIndex: 50, style: new Style({ image: new Circle({ radius: 10, fill: new Fill({ color: "#ffd052" }), stroke: new Stroke({ color: "#d94e31", width: 4 }) }) }) });
 
 export interface MapCallbacks { cursor: (longitude: number, latitude: number) => void; selection: (features: Feature<Geometry>[]) => void; changed: () => void; committed: (label: string) => void; }
 
 export function createMap(target: HTMLElement, tooltipElement: HTMLElement, callbacks: MapCallbacks): Map {
   const tooltip = new Overlay({ element: tooltipElement, offset: [12, 12], positioning: "bottom-left", stopEvent: false });
-  const map = new Map({ target, layers: [emap, photo, resultLayer, workLayer, tbnLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5 }) });
+  const map = new Map({ target, layers: [emap, photo, resultLayer, workLayer, tbnLayer, locateLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5 }) });
   selectInteraction = new Select({ layers: [workLayer], multi: true, condition: singleClick, toggleCondition: platformModifierKeyOnly, style: (feature) => [workStyle(feature)!, new Style({ stroke: new Stroke({ color: "#0f5bff", width: 3, lineDash: [5, 4] }), image: new Circle({ radius: 11, stroke: new Stroke({ color: "#0f5bff", width: 3 }) }) })] });
   map.addInteraction(selectInteraction); selectInteraction.on("select", () => callbacks.selection(selectedFeatures()));
   workSource.on("change", callbacks.changed);
@@ -139,3 +141,4 @@ export function featureSummary(feature: Feature<Geometry>): { type: string; meas
 export interface TbnRecord { [key: string]: unknown; occurrenceID?: string; decimalLatitude?: string | number; decimalLongitude?: string | number; vernacularName?: string; simplifiedScientificName?: string; scientificName?: string; taxonGroup?: string; year?: number; county?: string; municipality?: string; sensitiveCategory?: string; protectedStatusTW?: string; categoryRedlistTW?: string; datasetName?: string; license?: string; }
 export function showTbnRecords(records: TbnRecord[]): number { tbnSource.clear(); const features = records.flatMap((record) => { const latitude = Number(record.decimalLatitude); const longitude = Number(record.decimalLongitude); if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return []; const feature = new Feature(new Point(fromLonLat([longitude, latitude]))); feature.setProperties({ ...record, kind: "tbn", scientificName: record.simplifiedScientificName || record.scientificName }); return [feature]; }); tbnSource.addFeatures(features); return features.length; }
 export function clearTbnRecords(): void { tbnSource.clear(); }
+export function locateMap(map: Map, longitude: number, latitude: number): void { const coordinate = fromLonLat([longitude, latitude]); locateSource.clear(); locateSource.addFeature(new Feature(new Point(coordinate))); map.getView().animate({ center: coordinate, zoom: 17, duration: 450 }); }

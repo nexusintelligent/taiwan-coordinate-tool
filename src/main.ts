@@ -67,7 +67,7 @@ app.innerHTML = `
           <div class="card-heading"><h3>工作圖層</h3><span id="featureCount">0 筆圖徵</span></div>
           <div class="layer-actions"><button id="addGroup" class="icon-button" title="新增群組" aria-label="新增群組">▣＋</button><button id="addLayer" class="icon-button" title="新增圖層" aria-label="新增圖層">▤＋</button><label><input id="showWorkLabels" type="checkbox" checked>標籤</label></div>
           <div id="layerTree" class="layer-tree"></div>
-          <div id="featureList" class="feature-list"><p class="empty-state">尚未建立圖徵</p></div>
+          <p class="hint">勾選圖層名稱可作為布林運算輸入；點擊圖徵可選取，Ctrl＋點擊可複選。</p>
           <button id="fitFeatures" class="ghost-button">縮放至全部圖徵</button>
         </div>
         <div class="editor-card analysis-card">
@@ -75,7 +75,7 @@ app.innerHTML = `
           <div class="quick-buffer"><button class="preset-buffer" data-distance="100" data-preset="survey-area">建立調查範圍 100 m</button><button class="preset-buffer" data-distance="500" data-preset="inventory-area">建立盤點範圍 500 m</button></div>
           <div class="analysis-row"><label>Buffer 距離<input id="bufferDistance" type="number" min="0.1" step="1" value="1000"></label><label>單位<select id="bufferUnit"><option value="m">公尺</option><option value="km">公里</option></select></label><button id="runBuffer" class="small-button">建立環域</button></div>
           <div class="button-row"><button class="small-button boolean-button" data-operation="union">聯集 Union</button><button class="small-button boolean-button" data-operation="intersect">交集 Intersect</button><button class="small-button boolean-button" data-operation="difference">差集 Difference</button></div>
-          <p class="hint">Buffer 可套用於點、線、面；布林運算請按住 Ctrl 選取至少兩個面圖徵，差集以第一個選取圖徵為主體。</p>
+          <p id="booleanSelectionHint" class="hint">可勾選工作圖層作為運算輸入，或按住 Ctrl 複選至少兩個面圖徵；差集以圖層順序最前者為主體。</p>
         </div>
         <div class="editor-card tbn-card">
           <div class="card-heading"><h3>TBN 生態資料初篩</h3><span class="online-only">需連網</span></div>
@@ -89,7 +89,7 @@ app.innerHTML = `
         <div class="editor-card">
           <h3>資料交換</h3>
           <p class="hint">GeoJSON 使用 WGS84 儲存，匯入後自動投影到地圖；可再由 QGIS 另存為 EPSG:3826。</p>
-          <div class="button-row wrap"><label class="file-button">匯入 GeoJSON<input id="geojsonFile" type="file" accept=".geojson,.json,application/geo+json" hidden></label><button id="exportGeoJson" class="small-button">匯出 GeoJSON</button><button id="clearFeatures" class="danger-button">清空工作圖層</button></div>
+          <div class="button-row wrap"><label class="file-button">匯入 GeoJSON<input id="geojsonFile" type="file" accept=".geojson,.json,application/geo+json" hidden></label><button id="exportGeoJson" class="small-button">匯出 GeoJSON</button><button id="clearFeatures" class="danger-button">清空工作圖層</button><button id="clearSession" class="danger-button">清除已保存工作階段</button></div>
         </div>
         <details class="editor-card shortcut-help">
           <summary>滑鼠與快捷鍵</summary>
@@ -102,6 +102,8 @@ app.innerHTML = `
       <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
       <div id="offlineNotice" class="offline-notice" hidden>目前離線：仍可轉換、編輯及匯出，底圖暫停載入。</div>
       <div id="map"><div id="mapTooltip" class="map-tooltip"></div></div>
+      <div class="map-locator"><label for="locateInput">定位到：</label><input id="locateInput" placeholder="輸入經緯度或 TWD97 X, Y"><button id="locateButton">定位</button><span id="locateMessage">例：24.1243378, 120.6764627</span></div>
+      <details class="coordinate-draw"><summary>⌖ 以座標新增點／線／面</summary><div><label>圖徵類型<select id="coordinateGeometry"><option value="Point">點</option><option value="LineString">線</option><option value="Polygon">面</option></select></label><label>座標（線、面請每行一組）<textarea id="coordinateGeometryInput" rows="3" placeholder="24.1243378, 120.6764627&#10;24.1250000, 120.6770000"></textarea></label><button id="addCoordinateGeometry">新增至目前圖層</button><span id="coordinateGeometryMessage"></span></div></details>
       <div class="map-status"><span id="cursorCoordinate">游標座標：—</span><span>專案基準：TWD97 / TM2 zone 121 · EPSG:3826</span></div>
     </section>
   </main>
@@ -139,6 +141,7 @@ let workLayers: LayerDefinition[] = [
   { id: "analysis", name: "分析成果", groupId: "ecology", visible: true, order: 2 },
 ];
 let activeLayerId = "project";
+const analysisLayerIds = new Set<string>();
 let undoStack: string[] = [];
 let redoStack: string[] = [];
 let clipboardGeoJson = "";
@@ -209,7 +212,6 @@ function populateProperties(feature: Feature<Geometry> | null): void {
 
 function renderFeatureList(): void {
   const features = getWorkFeatures(); $("#featureCount").textContent = `${features.length} 筆圖徵`;
-  $("#featureList").innerHTML = features.length ? features.map((feature, index) => { const preset = featurePresets[(feature.get("preset") || "project-area") as FeaturePreset]; const summary = featureSummary(feature); return `<button class="feature-row" data-feature-index="${index}"><i style="--feature-color:${preset.color}"></i><span><strong>${escapeHtml(feature.get("name") || preset.label)}</strong><small>${preset.label}${summary.measurement ? ` · ${summary.measurement}` : ""}</small></span></button>`; }).join("") : '<p class="empty-state">尚未建立圖徵</p>';
   renderLayerTree();
 }
 
@@ -217,10 +219,11 @@ function renderLayerTree(): void {
   const sortedGroups = [...layerGroups].sort((a, b) => a.order - b.order);
   $("#layerTree").innerHTML = sortedGroups.map((group) => {
     const layers = workLayers.filter((layer) => layer.groupId === group.id).sort((a, b) => a.order - b.order);
-    return `<section class="layer-group" data-group-id="${group.id}" draggable="true"><div class="layer-group-heading"><span class="drag-handle">⋮⋮</span><label><input type="checkbox" data-group-visible="${group.id}" ${group.visible ? "checked" : ""}>${escapeHtml(group.name)}</label></div><div class="layer-dropzone" data-drop-group="${group.id}">${layers.map((layer) => `<div class="layer-item ${layer.id === activeLayerId ? "active" : ""}" draggable="true" data-layer-id="${layer.id}"><span class="drag-handle">⋮⋮</span><button data-activate-layer="${layer.id}" title="設為目前圖層">${layer.id === activeLayerId ? "●" : "○"}</button><label><input type="checkbox" data-layer-visible="${layer.id}" ${layer.visible && group.visible ? "checked" : ""}>${escapeHtml(layer.name)}</label><small>${getWorkFeatures().filter((feature) => feature.get("layerId") === layer.id).length}</small></div>`).join("") || '<p class="empty-layer">拖曳圖層到這裡</p>'}</div></section>`;
+    return `<section class="layer-group" data-group-id="${group.id}" draggable="true"><div class="layer-group-heading"><span class="drag-handle">⋮⋮</span><label><input type="checkbox" data-group-visible="${group.id}" ${group.visible ? "checked" : ""}>${escapeHtml(group.name)}</label></div><div class="layer-dropzone" data-drop-group="${group.id}">${layers.map((layer) => { const items = getWorkFeatures().map((feature, index) => ({ feature, index })).filter(({ feature }) => feature.get("layerId") === layer.id); return `<div class="layer-node ${layer.id === activeLayerId ? "active" : ""}" draggable="true" data-layer-id="${layer.id}"><div class="layer-item"><span class="drag-handle">⋮⋮</span><button data-activate-layer="${layer.id}" title="設為目前圖層">${layer.id === activeLayerId ? "●" : "○"}</button><label class="analysis-layer-label" title="勾選作為布林運算輸入"><input type="checkbox" data-layer-analysis="${layer.id}" ${analysisLayerIds.has(layer.id) ? "checked" : ""}>${escapeHtml(layer.name)}</label><label class="visibility-toggle" title="顯示或隱藏"><input type="checkbox" data-layer-visible="${layer.id}" ${layer.visible && group.visible ? "checked" : ""}>◉</label><small>${items.length}</small></div><div class="layer-features">${items.map(({ feature, index }) => { const preset = featurePresets[(feature.get("preset") || "project-area") as FeaturePreset]; const summary = featureSummary(feature); return `<button class="feature-row" data-feature-index="${index}"><i style="--feature-color:${preset.color}"></i><span><strong>${escapeHtml(feature.get("name") || preset.label)}</strong><small>${summary.type}${summary.measurement ? ` · ${summary.measurement}` : ""}</small></span></button>`; }).join("") || '<p class="empty-layer">尚無圖徵</p>'}</div></div>`; }).join("") || '<p class="empty-layer">拖曳圖層到這裡</p>'}</div></section>`;
   }).join("");
   featureLayer.innerHTML = workLayers.sort((a, b) => a.order - b.order).map((layer) => `<option value="${layer.id}">${escapeHtml(layer.name)}</option>`).join("");
   if (selectedFeature()) featureLayer.value = selectedFeature()!.get("layerId") || activeLayerId;
+  const chosen = [...analysisLayerIds].reduce((sum, id) => sum + layerFeatures(id).filter((feature) => feature.getGeometry()?.getType().includes("Polygon")).length, 0); $("#booleanSelectionHint").textContent = analysisLayerIds.size ? `已選 ${analysisLayerIds.size} 個圖層，共 ${chosen} 個面圖徵作為布林運算輸入。` : "可勾選工作圖層作為運算輸入，或按住 Ctrl 複選至少兩個面圖徵；差集以圖層順序最前者為主體。";
 }
 
 function applyLayerConfiguration(): void {
@@ -233,7 +236,7 @@ function applyLayerConfiguration(): void {
 function recordState(_label = "編輯"): void {
   const snapshot = exportGeoJson();
   if (undoStack.at(-1) === snapshot) return;
-  undoStack.push(snapshot); if (undoStack.length > 60) undoStack.shift(); redoStack = []; updateHistoryButtons();
+  undoStack.push(snapshot); if (undoStack.length > 60) undoStack.shift(); redoStack = []; updateHistoryButtons(); saveSession();
 }
 function updateHistoryButtons(): void { ($("#undoButton") as HTMLButtonElement).disabled = undoStack.length <= 1; ($("#redoButton") as HTMLButtonElement).disabled = !redoStack.length; }
 function undo(): void { if (undoStack.length <= 1) return; const current = undoStack.pop()!; redoStack.push(current); replaceWorkGeoJson(undoStack.at(-1)!); populateProperties(null); renderFeatureList(); updateHistoryButtons(); }
@@ -253,7 +256,7 @@ async function runPresetBuffer(distance: number, preset: FeaturePreset): Promise
 }
 
 async function runBoolean(operation: BooleanOperation): Promise<void> {
-  try { const { booleanGeometry } = await import("./spatial"); const result = booleanGeometry(selectedGeoFeatures(), operation); const labels: Record<BooleanOperation, string> = { union: "聯集", intersect: "交集", difference: "差集" }; addGeoFeature(result, { preset: "project-area", presetLabel: featurePresets["project-area"].label, name: `${labels[operation]}結果`, note: `由 ${selectedFeatures().length} 筆圖徵進行${labels[operation]}`, layerId: "analysis" }); recordState(labels[operation]); renderFeatureList(); populateProperties(selectedFeature()); }
+  try { const layerInput = [...analysisLayerIds].flatMap((id) => layerFeatures(id)).filter((feature) => feature.getGeometry()?.getType().includes("Polygon")); const inputs = layerInput.length ? JSON.parse(exportGeoJson(layerInput)).features : selectedGeoFeatures(); const { booleanGeometry } = await import("./spatial"); const result = booleanGeometry(inputs, operation); const labels: Record<BooleanOperation, string> = { union: "聯集", intersect: "交集", difference: "差集" }; addGeoFeature(result, { preset: "project-area", presetLabel: featurePresets["project-area"].label, name: `${labels[operation]}結果`, note: `由 ${inputs.length} 筆圖徵進行${labels[operation]}`, layerId: "analysis" }); recordState(labels[operation]); renderFeatureList(); populateProperties(selectedFeature()); }
   catch (error) { alert((error as Error).message); }
 }
 
@@ -302,6 +305,11 @@ $("#featureList").addEventListener("click", (event) => { const button = (event.t
 $("#sampleButton").addEventListener("click", () => { rawInput.value = "智聯工程科技顧問有限公司 24.124337779583556, 120.67646269974776"; inputSystem.value = "auto"; updateCoordinates(); });
 $("#copyExcelTop").addEventListener("click", (event) => copyExcel(event.currentTarget as HTMLButtonElement));
 $("#copyButton").addEventListener("click", (event) => outputMode === "table" ? copyExcel(event.currentTarget as HTMLButtonElement) : copyText(formattedOutput.textContent ?? "", event.currentTarget as HTMLButtonElement));
+function locateFromInput(): void { const input = (<HTMLInputElement>$("#locateInput")).value.trim(); const values = input.match(/-?\d+(?:\.\d+)?/g)?.map(Number); const notice = $("#locateMessage"); if (!values || values.length < 2) { notice.textContent = "請輸入兩個座標數值。"; return; } try { let lon: number; let lat: number; if (values[0] > 10000 && values[1] > 10000) { const point = convertPair({ first: values[0], second: values[1], sourceText: input }, "twd97", 7); lon = point.longitude; lat = point.latitude; notice.textContent = `TWD97 → ${lat.toFixed(7)}, ${lon.toFixed(7)}`; } else if (values[0] >= 20 && values[0] <= 27 && values[1] >= 118 && values[1] <= 123) { lat = values[0]; lon = values[1]; notice.textContent = `WGS84：${lat.toFixed(7)}, ${lon.toFixed(7)}`; } else if (values[1] >= 20 && values[1] <= 27 && values[0] >= 118 && values[0] <= 123) { lon = values[0]; lat = values[1]; notice.textContent = `WGS84：${lat.toFixed(7)}, ${lon.toFixed(7)}`; } else throw new Error("座標不在臺灣合理範圍內。"); locateMap(map, lon, lat); } catch (error) { notice.textContent = (error as Error).message; } }
+function parseMapCoordinate(text: string): [number, number] { const values = text.match(/-?\d+(?:\.\d+)?/g)?.map(Number); if (!values || values.length < 2) throw new Error(`無法辨識座標：${text}`); if (values[0] > 10000 && values[1] > 10000) { const point = convertPair({ first: values[0], second: values[1], sourceText: text }, "twd97", 7); return [point.longitude, point.latitude]; } if (values[0] >= 20 && values[0] <= 27 && values[1] >= 118 && values[1] <= 123) return [values[1], values[0]]; if (values[1] >= 20 && values[1] <= 27 && values[0] >= 118 && values[0] <= 123) return [values[0], values[1]]; throw new Error(`座標不在臺灣合理範圍：${text}`); }
+function addGeometryFromCoordinates(): void { const type = (<HTMLSelectElement>$("#coordinateGeometry")).value as "Point" | "LineString" | "Polygon"; const lines = (<HTMLTextAreaElement>$("#coordinateGeometryInput")).value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); const notice = $("#coordinateGeometryMessage"); try { const coordinates = lines.map(parseMapCoordinate); if (type === "Point" && coordinates.length !== 1) throw new Error("點圖徵請輸入一組座標。"); if (type === "LineString" && coordinates.length < 2) throw new Error("線圖徵至少需要兩組座標。"); if (type === "Polygon" && coordinates.length < 3) throw new Error("面圖徵至少需要三組座標。"); const preset = featurePreset.value as FeaturePreset; const presetInfo = featurePresets[preset]; let geometry: { type: "Point"; coordinates: [number, number] } | { type: "LineString"; coordinates: [number, number][] } | { type: "Polygon"; coordinates: [number, number][][] }; if (type === "Point") geometry = { type, coordinates: coordinates[0] }; else if (type === "LineString") geometry = { type, coordinates }; else { const ring = [...coordinates]; if (ring[0][0] !== ring.at(-1)![0] || ring[0][1] !== ring.at(-1)![1]) ring.push([...ring[0]] as [number, number]); geometry = { type, coordinates: [ring] }; } addGeoFeature({ type: "Feature", properties: {}, geometry }, { preset, presetLabel: presetInfo.label, name: `${presetInfo.label}（座標新增）`, note: "由精確座標輸入建立", layerId: activeLayerId }); recordState("座標新增圖徵"); renderFeatureList(); populateProperties(selectedFeature()); fitFeatures(map, selectedFeatures()); notice.textContent = `已新增 ${type === "Point" ? "點" : type === "LineString" ? "線" : "面"}圖徵。`; } catch (error) { notice.textContent = (error as Error).message; } }
+$("#locateButton").addEventListener("click", locateFromInput); $("#locateInput").addEventListener("keydown", (event) => { if ((event as KeyboardEvent).key === "Enter") locateFromInput(); });
+$("#addCoordinateGeometry").addEventListener("click", addGeometryFromCoordinates);
 $("#baseMap").addEventListener("change", (event) => setBaseMap((event.target as HTMLSelectElement).value as "emap" | "photo"));
 featurePreset.addEventListener("change", () => { const preset = featurePresets[featurePreset.value as FeaturePreset]; if (["point", "line", "polygon"].includes(editorMode)) { const nextMode = preset.geometry === "Point" ? "point" : preset.geometry === "LineString" ? "line" : "polygon"; setTool(nextMode); } });
 $("#saveProperties").addEventListener("click", () => { updateSelected({ name: featureName.value.trim() || featurePresets[featurePreset.value as FeaturePreset].label, note: featureNote.value.trim(), preset: featurePreset.value as FeaturePreset, layerId: featureLayer.value }); recordState("修改屬性"); renderFeatureList(); populateProperties(selectedFeature()); });
@@ -310,9 +318,12 @@ $("#fitFeatures").addEventListener("click", () => fitWorkFeatures(map));
 $("#exportGeoJson").addEventListener("click", () => { if (!getWorkFeatures().length) { alert("工作圖層目前沒有可匯出的圖徵。"); return; } download(`智聯工程圖資_${new Date().toISOString().slice(0, 10)}.geojson`, exportGeoJson(), "application/geo+json;charset=utf-8"); });
 $("#geojsonFile").addEventListener("change", async (event) => { const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return; try { const count = importGeoJson(map, await file.text()); recordState("匯入 GeoJSON"); renderFeatureList(); alert(`已匯入 ${count} 筆圖徵。`); } catch (error) { alert(`無法匯入 GeoJSON：${(error as Error).message}`); } finally { input.value = ""; } });
 $("#clearFeatures").addEventListener("click", () => { if (getWorkFeatures().length && confirm("確定清空目前工作圖層？可使用復原取回。")) { clearWorkFeatures(); recordState("清空工作圖層"); populateProperties(null); renderFeatureList(); } });
+$("#clearSession").addEventListener("click", () => { if (confirm("確定清除本機保存的工作階段？目前畫面不會立即清空，但重新整理後不再自動還原。")) { localStorage.removeItem(SESSION_KEY); alert("已清除本機工作階段。若要保留目前內容，請先匯出 GeoJSON。"); } });
 ["showWorkLabels", "showResultLabels", "showResultLine"].forEach((id) => $(`#${id}`).addEventListener("change", () => setMapDisplay({ workLabels: ($("#showWorkLabels") as HTMLInputElement).checked, resultLabels: ($("#showResultLabels") as HTMLInputElement).checked, resultLine: ($("#showResultLine") as HTMLInputElement).checked })));
 
 $("#undoButton").addEventListener("click", undo); $("#redoButton").addEventListener("click", redo);
+document.querySelectorAll<HTMLButtonElement>("[data-map-tool]").forEach((button) => button.addEventListener("click", () => setTool(button.dataset.mapTool as EditorMode)));
+$("#toolbarZoomAll").addEventListener("click", () => fitWorkFeatures(map)); $("#toolbarUndo").addEventListener("click", undo); $("#toolbarRedo").addEventListener("click", redo); $("#toolbarDelete").addEventListener("click", () => { if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } });
 $("#cancelEdit").addEventListener("click", () => { cancelEditorMode(map); setTool("select"); });
 $("#removeVertex").addEventListener("click", () => { if (!removeLastDrawPoint()) alert("目前沒有正在繪製的線或面圖徵。"); });
 $("#runBuffer").addEventListener("click", runBuffer);
@@ -323,11 +334,45 @@ $("#queryTbn").addEventListener("click", queryTbn); $("#exportTbnChecklist").add
 $("#addGroup").addEventListener("click", () => { const name = prompt("新群組名稱：", "新群組"); if (!name?.trim()) return; const id = `group-${Date.now()}`; layerGroups.push({ id, name: name.trim(), visible: true, order: layerGroups.length }); renderLayerTree(); });
 $("#addLayer").addEventListener("click", () => { const name = prompt("新圖層名稱：", "新工作圖層"); if (!name?.trim()) return; const groupId = layerGroups[0]?.id || "engineering"; const id = `layer-${Date.now()}`; workLayers.push({ id, name: name.trim(), groupId, visible: true, order: workLayers.length }); activeLayerId = id; applyLayerConfiguration(); });
 let draggedLayerId = ""; let draggedGroupId = "";
-$("#layerTree").addEventListener("change", (event) => { const target = event.target as HTMLInputElement; if (target.dataset.layerVisible) { const layer = workLayers.find((item) => item.id === target.dataset.layerVisible); if (layer) layer.visible = target.checked; } if (target.dataset.groupVisible) { const group = layerGroups.find((item) => item.id === target.dataset.groupVisible); if (group) group.visible = target.checked; } applyLayerConfiguration(); });
-$("#layerTree").addEventListener("click", (event) => { const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-activate-layer]"); if (!button) return; activeLayerId = button.dataset.activateLayer!; setActiveLayer(activeLayerId); renderLayerTree(); });
+$("#layerTree").addEventListener("change", (event) => { const target = event.target as HTMLInputElement; if (target.dataset.layerAnalysis) { target.checked ? analysisLayerIds.add(target.dataset.layerAnalysis) : analysisLayerIds.delete(target.dataset.layerAnalysis); renderLayerTree(); return; } if (target.dataset.layerVisible) { const layer = workLayers.find((item) => item.id === target.dataset.layerVisible); if (layer) layer.visible = target.checked; } if (target.dataset.groupVisible) { const group = layerGroups.find((item) => item.id === target.dataset.groupVisible); if (group) group.visible = target.checked; } applyLayerConfiguration(); saveSession(); });
+$("#layerTree").addEventListener("click", (event) => { const featureButton = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-feature-index]"); if (featureButton) { const feature = getWorkFeatures()[Number(featureButton.dataset.featureIndex)]; if ((event as MouseEvent).ctrlKey || (event as MouseEvent).metaKey) toggleFeatureSelection(feature); else selectFeature(feature); populateProperties(selectedFeature()); return; } const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-activate-layer]"); if (!button) return; activeLayerId = button.dataset.activateLayer!; setActiveLayer(activeLayerId); renderLayerTree(); saveSession(); });
 $("#layerTree").addEventListener("dragstart", (event) => { const element = event.target as HTMLElement; draggedLayerId = element.closest<HTMLElement>("[data-layer-id]")?.dataset.layerId || ""; draggedGroupId = draggedLayerId ? "" : element.closest<HTMLElement>("[data-group-id]")?.dataset.groupId || ""; });
 $("#layerTree").addEventListener("dragover", (event) => event.preventDefault());
-$("#layerTree").addEventListener("drop", (event) => { event.preventDefault(); const target = event.target as HTMLElement; const targetGroup = target.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup || target.closest<HTMLElement>("[data-group-id]")?.dataset.groupId; const targetLayer = target.closest<HTMLElement>("[data-layer-id]")?.dataset.layerId; if (draggedLayerId && targetGroup) { const layer = workLayers.find((item) => item.id === draggedLayerId); if (layer) { layer.groupId = targetGroup; const destination = workLayers.find((item) => item.id === targetLayer); layer.order = destination?.order ?? workLayers.length; workLayers.filter((item) => item.id !== layer.id && item.order >= layer.order).forEach((item) => item.order++); } } else if (draggedGroupId && targetGroup && draggedGroupId !== targetGroup) { const source = layerGroups.find((item) => item.id === draggedGroupId); const destination = layerGroups.find((item) => item.id === targetGroup); if (source && destination) { const old = source.order; source.order = destination.order; destination.order = old; } } draggedLayerId = ""; draggedGroupId = ""; applyLayerConfiguration(); });
+$("#layerTree").addEventListener("drop", (event) => { event.preventDefault(); const target = event.target as HTMLElement; const targetGroup = target.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup || target.closest<HTMLElement>("[data-group-id]")?.dataset.groupId; const targetLayer = target.closest<HTMLElement>("[data-layer-id]")?.dataset.layerId; if (draggedLayerId && targetGroup) { const layer = workLayers.find((item) => item.id === draggedLayerId); if (layer) { layer.groupId = targetGroup; const destination = workLayers.find((item) => item.id === targetLayer); layer.order = destination?.order ?? workLayers.length; workLayers.filter((item) => item.id !== layer.id && item.order >= layer.order).forEach((item) => item.order++); } } else if (draggedGroupId && targetGroup && draggedGroupId !== targetGroup) { const source = layerGroups.find((item) => item.id === draggedGroupId); const destination = layerGroups.find((item) => item.id === targetGroup); if (source && destination) { const old = source.order; source.order = destination.order; destination.order = old; } } draggedLayerId = ""; draggedGroupId = ""; applyLayerConfiguration(); saveSession(); });
+
+$("#layerTree").addEventListener("contextmenu", (event) => {
+  if ((event.target as HTMLElement).closest("[data-feature-index]")) return;
+  const layerItem = (event.target as HTMLElement).closest<HTMLElement>("[data-layer-id]"); if (!layerItem) return; contextLayerId = layerItem.dataset.layerId!; const layer = workLayers.find((item) => item.id === contextLayerId)!;
+  openContextMenu(event as MouseEvent, [{ action: "activate-layer", icon: "◎", label: "設為作用中圖層" }, { action: "zoom-layer", icon: "⌖", label: "縮放至圖層", disabled: !layerFeatures(contextLayerId).length }, { action: "select-layer", icon: "▣", label: "選取圖層全部圖徵", disabled: !layerFeatures(contextLayerId).length }, { action: "toggle-layer", icon: layer.visible ? "◉" : "○", label: layer.visible ? "隱藏圖層" : "顯示圖層" }, { action: "rename-layer", icon: "✎", label: "重新命名" }]);
+});
+$("#layerTree").addEventListener("contextmenu", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>("[data-feature-index]"); if (!row) return; contextFeature = getWorkFeatures()[Number(row.dataset.featureIndex)]; selectFeature(contextFeature); populateProperties(contextFeature);
+  openContextMenu(event as MouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]);
+});
+$("#map").addEventListener("contextmenu", (event) => {
+  if (finishDrawing()) { event.preventDefault(); recordState("完成繪製"); renderFeatureList(); return; }
+  const mouseEvent = event as MouseEvent; const pixel = map.getEventPixel(mouseEvent); contextFeature = map.forEachFeatureAtPixel(pixel, (candidate) => candidate as Feature<Geometry>) ?? null; contextLonLat = toLonLat(map.getCoordinateFromPixel(pixel)) as [number, number];
+  if (contextFeature?.get("layerId")) { selectFeature(contextFeature); populateProperties(contextFeature); openContextMenu(mouseEvent, [{ action: "zoom-selection", icon: "⌖", label: "縮放至圖徵" }, { action: "copy-feature", icon: "⧉", label: "複製圖徵" }, { action: "duplicate-feature", icon: "＋", label: "複製一份" }, { action: "delete-feature", icon: "⌫", label: "刪除圖徵", danger: true }]); return; }
+  openContextMenu(mouseEvent, [{ action: "copy-coordinate", icon: "⊕", label: "複製此處 WGS84／TWD97" }, { action: "add-point-here", icon: "●", label: "在此新增點" }, { action: "paste-feature", icon: "▣", label: "貼上圖徵", disabled: !clipboardGeoJson }, { action: "zoom-all", icon: "⌗", label: "縮放至全部工作圖徵", disabled: !getWorkFeatures().length }]);
+});
+$("#contextMenu").addEventListener("click", async (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-context-action]"); if (!button) return; const action = button.dataset.contextAction!; closeContextMenu();
+  if (action === "activate-layer") { activeLayerId = contextLayerId; setActiveLayer(activeLayerId); renderLayerTree(); }
+  else if (action === "zoom-layer") fitFeatures(map, layerFeatures(contextLayerId));
+  else if (action === "select-layer") { selectLayerFeatures(contextLayerId); populateProperties(selectedFeature()); }
+  else if (action === "toggle-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); if (layer) { layer.visible = !layer.visible; applyLayerConfiguration(); } }
+  else if (action === "rename-layer") { const layer = workLayers.find((item) => item.id === contextLayerId); const name = layer && prompt("圖層名稱：", layer.name); if (layer && name?.trim()) { layer.name = name.trim(); renderLayerTree(); } }
+  else if (action === "zoom-selection" && contextFeature) fitFeatures(map, [contextFeature]);
+  else if (action === "copy-feature" && contextFeature) { selectFeature(contextFeature); clipboardGeoJson = exportGeoJson([contextFeature]); await navigator.clipboard.writeText(clipboardGeoJson); }
+  else if (action === "duplicate-feature" && contextFeature) { selectFeature(contextFeature); if (duplicateSelected()) { recordState("複製圖徵"); renderFeatureList(); } }
+  else if (action === "delete-feature" && contextFeature) { selectFeature(contextFeature); if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } }
+  else if (action === "copy-coordinate" && contextLonLat) { const [lon, lat] = contextLonLat; const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); await navigator.clipboard.writeText(`${lat.toFixed(7)}, ${lon.toFixed(7)}\t${Math.round(twd.x)}, ${Math.round(twd.y)}`); }
+  else if (action === "add-point-here" && contextLonLat) { addGeoFeature({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: contextLonLat } }, { preset: "project-point", presetLabel: featurePresets["project-point"].label, name: "地圖新增點", note: "由地圖右鍵新增", layerId: activeLayerId }); recordState("地圖新增點"); renderFeatureList(); populateProperties(selectedFeature()); }
+  else if (action === "paste-feature" && clipboardGeoJson) { importGeoJson(undefined, clipboardGeoJson); recordState("貼上圖徵"); renderFeatureList(); }
+  else if (action === "zoom-all") fitWorkFeatures(map);
+});
+document.addEventListener("pointerdown", (event) => { if (!(event.target as HTMLElement).closest("#contextMenu")) closeContextMenu(); });
+window.addEventListener("blur", closeContextMenu);
 
 $("#layerTree").addEventListener("contextmenu", (event) => {
   const layerItem = (event.target as HTMLElement).closest<HTMLElement>("[data-layer-id]"); if (!layerItem) return; contextLayerId = layerItem.dataset.layerId!; const layer = workLayers.find((item) => item.id === contextLayerId)!;
@@ -376,4 +421,4 @@ window.addEventListener("keydown", (event) => {
   else if (event.key === " ") { event.preventDefault(); setTool("browse"); }
 });
 window.addEventListener("online", updateNetworkState); window.addEventListener("offline", updateNetworkState);
-updateNetworkState(); updateCoordinates(); renderFeatureList(); setTool("select"); recordState("初始狀態");
+updateNetworkState(); updateCoordinates(); const restored = restoreSession(); renderFeatureList(); setTool("select"); recordState(restored ? "還原工作階段" : "初始狀態");
