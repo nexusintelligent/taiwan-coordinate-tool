@@ -136,7 +136,12 @@ td small { display:block; max-width:135px; overflow:hidden; color:#84908b; text-
 .shortcut-grid { display:grid; grid-template-columns:max-content 1fr; gap:7px 10px; align-items:center; margin-top:12px; color:var(--muted); font-size:9px; }
 .shortcut-grid kbd { padding:3px 6px; color:var(--green); background:#f2f0e8; border:1px solid #c7cbc6; border-bottom-width:2px; border-radius:3px; font:8px ui-monospace,"Cascadia Code",monospace; text-align:center; }
 
-.map-workspace { min-width:0; display:grid; grid-template-rows:auto auto minmax(460px,1fr) auto auto max-content; background:#dce3df; }
+.map-workspace { position:relative; min-width:0; display:grid; grid-template-rows:auto auto minmax(460px,1fr) auto auto max-content; background:#dce3df; }
+.file-drop-overlay { position:absolute; inset:70px 18px 76px; z-index:1000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#fff; background:rgba(11,65,58,.9); border:3px dashed #f3bc48; border-radius:8px; pointer-events:none; box-shadow:0 8px 32px rgba(0,0,0,.25); }
+.file-drop-overlay[hidden] { display:none; }
+.file-drop-overlay strong { font-size:20px; }
+.file-drop-overlay span { color:#fff3cc; font-size:12px; }
+.file-dragging #map { filter:saturate(.55); }
 .map-topbar { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:11px 15px; background:var(--paper); border-bottom:1px solid #aeb8b2; }
 .map-topbar { grid-row:1; }
 .map-topbar > div:first-child { display:grid; }

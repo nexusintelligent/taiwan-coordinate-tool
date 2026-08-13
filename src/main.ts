@@ -7,6 +7,7 @@ import { registerSW } from "virtual:pwa-register";
 import { convertPair, type CoordinateSystem, type ConvertedCoordinate } from "./coordinate";
 import { extractCoordinatePairs } from "./parser";
 import { createTableRows, pointTokens, renderTemplate, replaceCoordinatesInText, templates, type NumberFormatOptions } from "./format";
+import { readSpatialFiles } from "./file-import";
 import {
   addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteSelected,
   duplicateSelected, exportGeoJson, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures, locateMap,
@@ -89,7 +90,8 @@ app.innerHTML = `
         <div class="editor-card">
           <h3>資料交換</h3>
           <p class="hint">GeoJSON 使用 WGS84 儲存，匯入後自動投影到地圖；可再由 QGIS 另存為 EPSG:3826。</p>
-          <div class="button-row wrap"><label class="file-button">匯入 GeoJSON<input id="geojsonFile" type="file" accept=".geojson,.json,application/geo+json" hidden></label><button id="exportGeoJson" class="small-button">匯出 GeoJSON</button><button id="clearFeatures" class="danger-button">清空工作圖層</button><button id="clearSession" class="danger-button">清除已保存工作階段</button></div>
+          <div class="button-row wrap"><label class="file-button">匯入圖資<input id="spatialFile" type="file" accept=".geojson,.json,.kml,.zip,.shp,.shx,.dbf,.prj,.cpg" multiple hidden></label><button id="exportGeoJson" class="small-button">匯出 GeoJSON</button><button id="clearFeatures" class="danger-button">清空工作圖層</button><button id="clearSession" class="danger-button">清除已保存工作階段</button></div>
+          <p class="hint">支援 GeoJSON、KML、ZIP Shapefile；散檔 Shapefile 請一次選取或拖入同名的 SHP、SHX、DBF、PRJ、CPG。</p>
         </div>
         <details class="editor-card shortcut-help">
           <summary>滑鼠與快捷鍵</summary>
@@ -101,7 +103,7 @@ app.innerHTML = `
     <section class="map-workspace">
       <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-toolbar" aria-label="地圖工具列"><button data-map-tool="browse" title="拖曳圖面">✋</button><button data-map-tool="select" title="選取圖徵">⌖</button><button id="toolbarZoomAll" title="縮放至全部圖徵">⛶</button><button id="toolbarUndo" title="復原 Ctrl+Z">↶</button><button id="toolbarRedo" title="重做 Ctrl+Y">↷</button><button id="toolbarDelete" title="刪除選取圖徵">⌫</button></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
       <div id="offlineNotice" class="offline-notice" hidden>目前離線：仍可轉換、編輯及匯出，底圖暫停載入。</div>
-      <div id="map"><div id="mapTooltip" class="map-tooltip"></div></div>
+      <div id="map"><div id="mapTooltip" class="map-tooltip"></div><div id="fileDropOverlay" class="file-drop-overlay" hidden><strong>放開以新增圖資圖層</strong><span>GeoJSON · KML · ZIP／散檔 Shapefile</span></div></div>
       <div class="map-locator"><label for="locateInput">定位到：</label><input id="locateInput" placeholder="輸入經緯度或 TWD97 X, Y"><button id="locateButton">定位</button><span id="locateMessage">例：24.1243378, 120.6764627</span></div>
       <details class="coordinate-draw"><summary>⌖ 以座標新增點／線／面</summary><div><label>圖徵類型<select id="coordinateGeometry"><option value="Point">點</option><option value="LineString">線</option><option value="Polygon">面</option></select></label><label>座標（線、面請每行一組）<textarea id="coordinateGeometryInput" rows="3" placeholder="24.1243378, 120.6764627&#10;24.1250000, 120.6770000"></textarea></label><button id="addCoordinateGeometry">新增至目前圖層</button><span id="coordinateGeometryMessage"></span></div></details>
       <div class="map-status"><span id="cursorCoordinate">游標座標：—</span><span>專案基準：TWD97 / TM2 zone 121 · EPSG:3826</span></div>
@@ -168,6 +170,18 @@ let editorMode: EditorMode = "select";
 function escapeHtml(value: string): string { return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!); }
 function saveSession(): void { try { localStorage.setItem(SESSION_KEY, JSON.stringify({ version: 1, geojson: exportGeoJson(), layerGroups, workLayers, activeLayerId, showWorkLabels: (<HTMLInputElement>$("#showWorkLabels")).checked })); } catch (error) { console.warn("無法保存工作階段", error); } }
 function restoreSession(): boolean { try { const saved = localStorage.getItem(SESSION_KEY); if (!saved) return false; const state = JSON.parse(saved); if (!Array.isArray(state.layerGroups) || !Array.isArray(state.workLayers) || typeof state.geojson !== "string") return false; layerGroups = state.layerGroups; workLayers = state.workLayers; activeLayerId = state.activeLayerId || workLayers[0]?.id || "project"; (<HTMLInputElement>$("#showWorkLabels")).checked = state.showWorkLabels !== false; replaceWorkGeoJson(state.geojson); applyLayerConfiguration(); return true; } catch (error) { console.warn("無法還原工作階段", error); return false; } }
+function safeLayerId(name: string): string { const base = name.normalize("NFKC").replace(/[^\p{Letter}\p{Number}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase() || "imported"; let id = base; let suffix = 2; while (workLayers.some((layer) => layer.id === id)) id = `${base}-${suffix++}`; return id; }
+async function importSpatialFiles(files: FileList | File[]): Promise<void> {
+  const datasets = await readSpatialFiles(files); if (!datasets.length) return;
+  let total = 0; const warnings: string[] = [];
+  for (const dataset of datasets) {
+    const id = safeLayerId(dataset.name); workLayers.push({ id, name: dataset.name, groupId: layerGroups[0]?.id || "engineering", visible: true, order: workLayers.length });
+    activeLayerId = id; setActiveLayer(id); configureLayers(workLayers);
+    total += importGeoJson(undefined, dataset.geojson); warnings.push(...dataset.warnings.map((warning) => `${dataset.name}：${warning}`));
+  }
+  applyLayerConfiguration(); recordState(`匯入 ${datasets.length} 個圖層`); renderFeatureList(); fitWorkFeatures(map); saveSession();
+  alert(`已新增 ${datasets.length} 個圖層，共 ${total} 筆圖徵。${warnings.length ? `\n\n注意：\n${warnings.join("\n")}` : ""}`);
+}
 function closeContextMenu(): void { (<HTMLElement>$("#contextMenu")).hidden = true; }
 function openContextMenu(event: MouseEvent, items: Array<{ action: string; icon: string; label: string; danger?: boolean; disabled?: boolean }>): void {
   event.preventDefault(); const menu = $("#contextMenu") as HTMLElement;
@@ -318,7 +332,12 @@ $("#saveProperties").addEventListener("click", () => { updateSelected({ name: fe
 $("#deleteFeature").addEventListener("click", () => { if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } });
 $("#fitFeatures").addEventListener("click", () => fitWorkFeatures(map));
 $("#exportGeoJson").addEventListener("click", () => { if (!getWorkFeatures().length) { alert("工作圖層目前沒有可匯出的圖徵。"); return; } download(`智聯工程圖資_${new Date().toISOString().slice(0, 10)}.geojson`, exportGeoJson(), "application/geo+json;charset=utf-8"); });
-$("#geojsonFile").addEventListener("change", async (event) => { const input = event.target as HTMLInputElement; const file = input.files?.[0]; if (!file) return; try { const count = importGeoJson(map, await file.text()); recordState("匯入 GeoJSON"); renderFeatureList(); alert(`已匯入 ${count} 筆圖徵。`); } catch (error) { alert(`無法匯入 GeoJSON：${(error as Error).message}`); } finally { input.value = ""; } });
+$("#spatialFile").addEventListener("change", async (event) => { const input = event.target as HTMLInputElement; if (!input.files?.length) return; try { await importSpatialFiles(input.files); } catch (error) { alert(`無法匯入圖資：${(error as Error).message}`); } finally { input.value = ""; } });
+const mapWorkspace = $(".map-workspace") as HTMLElement; const fileDropOverlay = $("#fileDropOverlay") as HTMLElement; let fileDragDepth = 0;
+mapWorkspace.addEventListener("dragenter", (event) => { if (!event.dataTransfer?.types.includes("Files")) return; event.preventDefault(); fileDragDepth++; fileDropOverlay.hidden = false; mapWorkspace.classList.add("file-dragging"); });
+mapWorkspace.addEventListener("dragover", (event) => { if (!event.dataTransfer?.types.includes("Files")) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
+mapWorkspace.addEventListener("dragleave", (event) => { if (!event.dataTransfer?.types.includes("Files")) return; fileDragDepth = Math.max(0, fileDragDepth - 1); if (!fileDragDepth) { fileDropOverlay.hidden = true; mapWorkspace.classList.remove("file-dragging"); } });
+mapWorkspace.addEventListener("drop", async (event) => { if (!event.dataTransfer?.files.length) return; event.preventDefault(); event.stopPropagation(); fileDragDepth = 0; fileDropOverlay.hidden = true; mapWorkspace.classList.remove("file-dragging"); try { await importSpatialFiles(event.dataTransfer.files); } catch (error) { alert(`無法匯入圖資：${(error as Error).message}`); } });
 $("#clearFeatures").addEventListener("click", () => { if (getWorkFeatures().length && confirm("確定清空目前工作圖層？可使用復原取回。")) { clearWorkFeatures(); recordState("清空工作圖層"); populateProperties(null); renderFeatureList(); } });
 $("#clearSession").addEventListener("click", () => { if (confirm("確定清除本機保存的工作階段？目前畫面不會立即清空，但重新整理後不再自動還原。")) { localStorage.removeItem(SESSION_KEY); alert("已清除本機工作階段。若要保留目前內容，請先匯出 GeoJSON。"); } });
 ["showWorkLabels", "showResultLabels", "showResultLine"].forEach((id) => $(`#${id}`).addEventListener("change", () => setMapDisplay({ workLabels: ($("#showWorkLabels") as HTMLInputElement).checked, resultLabels: ($("#showResultLabels") as HTMLInputElement).checked, resultLine: ($("#showResultLine") as HTMLInputElement).checked })));
