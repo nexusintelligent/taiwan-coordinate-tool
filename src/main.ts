@@ -9,8 +9,8 @@ import { extractCoordinatePairs } from "./parser";
 import { createTableRows, pointTokens, renderTemplate, replaceCoordinatesInText, templates, type NumberFormatOptions } from "./format";
 import { readSpatialFiles } from "./file-import";
 import {
-  addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteSelected,
-  duplicateSelected, exportGeoJson, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures, locateMap,
+  addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteFeatures,
+  duplicateSelected, exportGeoJson, exportKml, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures, locateMap,
   removeLastDrawPoint, replaceWorkGeoJson, selectAllFeatures, selectFeature, selectedFeature, selectedFeatures,
   selectedGeoFeatures, selectLayerFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, showPoints, showTbnRecords,
   toggleFeatureSelection, updateSelected, type EditorMode, type FeaturePreset, type LayerDefinition, type TbnRecord,
@@ -24,12 +24,13 @@ app.innerHTML = `
   <header class="app-header">
     <div class="brand-mark" aria-hidden="true">智</div>
     <div class="brand-copy"><p>智聯工程科技顧問有限公司</p><h1>智聯 GeoDesk</h1><span>工程座標與圖資工作台 · v0.4</span></div>
-    <nav class="app-tabs" aria-label="工作模式"><button class="app-tab active" data-view="coordinate">座標轉換</button><button class="app-tab" data-view="editor">圖資編輯</button></nav>
+    <nav class="app-tabs" aria-label="工作模式"><button class="app-tab active" data-view="editor">圖資功能</button><button class="app-tab" data-view="coordinate">座標轉換</button></nav>
+    <div class="header-actions"><button id="toggleWorkbench" title="收合左側工作區">☰</button><button id="toggleHeader" title="收合上方區域">▴</button><button id="themeToggle" title="切換深淺色主題">◐</button></div>
     <div class="header-status"><span id="networkStatus" class="status-dot">檢查連線</span><span>EPSG:3826</span></div>
   </header>
   <main class="app-shell">
     <aside class="workbench">
-      <section id="coordinateView" class="view-panel">
+      <section id="coordinateView" class="view-panel" hidden>
         <div class="section-title"><span>01</span><div><h2>座標輸入</h2><p>混合文字也能直接辨識</p></div></div>
         <textarea id="rawInput" spellcheck="false">智聯工程科技顧問有限公司 24.124337779583556, 120.67646269974776</textarea>
         <div class="inline-controls"><label>輸入類型<select id="inputSystem"><option value="auto">自動判斷</option><option value="wgs84-latlon">WGS84（緯度, 經度）</option><option value="wgs84-lonlat">WGS84（經度, 緯度）</option><option value="twd97">TWD97（X, Y）</option></select></label><button id="sampleButton" class="ghost-button">載入範例</button></div>
@@ -48,7 +49,7 @@ app.innerHTML = `
         <div class="output-box"><pre id="formattedOutput"></pre><button id="copyButton" class="primary-button">複製結果</button></div>
       </section>
 
-      <section id="editorView" class="view-panel" hidden>
+      <section id="editorView" class="view-panel">
         <div class="editor-intro"><span class="qgis-badge">QGIS 工作流</span><h2>輕量圖資編輯</h2><p>依近期工程及生態檢核專案建立的公司圖徵預設。成果可用 GeoJSON 與 QGIS 雙向交換。</p></div>
         <div class="editor-card">
           <h3>繪製與編修</h3>
@@ -90,7 +91,7 @@ app.innerHTML = `
         <div class="editor-card">
           <h3>資料交換</h3>
           <p class="hint">GeoJSON 使用 WGS84 儲存，匯入後自動投影到地圖；可再由 QGIS 另存為 EPSG:3826。</p>
-          <div class="button-row wrap"><label class="file-button">匯入圖資<input id="spatialFile" type="file" accept=".geojson,.json,.kml,.zip,.shp,.shx,.dbf,.prj,.cpg" multiple hidden></label><button id="exportGeoJson" class="small-button">匯出 GeoJSON</button><button id="clearFeatures" class="danger-button">清空工作圖層</button><button id="clearSession" class="danger-button">清除已保存工作階段</button></div>
+          <div class="button-row wrap"><label class="file-button">匯入圖資<input id="spatialFile" type="file" accept=".geojson,.json,.kml,.zip,.shp,.shx,.dbf,.prj,.cpg" multiple hidden></label><select id="exportFormat" aria-label="匯出格式"><option value="geojson">GeoJSON</option><option value="kml">KML</option></select><button id="exportSpatial" class="small-button">匯出圖資</button><button id="clearFeatures" class="danger-button">清空工作圖層</button><button id="clearSession" class="danger-button">清除已保存工作階段</button></div>
           <p class="hint">支援 GeoJSON、KML、ZIP Shapefile；散檔 Shapefile 請一次選取或拖入同名的 SHP、SHX、DBF、PRJ、CPG。</p>
         </div>
         <details class="editor-card shortcut-help">
@@ -101,6 +102,7 @@ app.innerHTML = `
     </aside>
 
     <section class="map-workspace">
+      <nav class="desktop-menu" aria-label="圖資功能選單"><button data-menu-action="import">檔案／匯入</button><button data-menu-action="undo">編輯／復原</button><button data-menu-action="fit">檢視／全圖</button><button data-menu-action="select">選取／全選</button></nav>
       <div class="map-topbar"><div><strong>圖資位置檢核</strong><span id="mapContext">座標成果預覽</span></div><div class="map-toolbar" aria-label="地圖工具列"><button data-map-tool="browse" title="拖曳圖面">✋</button><button data-map-tool="select" title="選取圖徵">⌖</button><button id="toolbarZoomAll" title="縮放至全部圖徵">⛶</button><button id="toolbarUndo" title="復原 Ctrl+Z">↶</button><button id="toolbarRedo" title="重做 Ctrl+Y">↷</button><button id="toolbarDelete" title="刪除選取圖徵">⌫</button></div><div class="map-controls"><select id="baseMap"><option value="emap">臺灣通用電子地圖</option><option value="photo">國土測繪中心正射影像</option><option value="google" disabled>Google Satellite（需官方 API 專案）</option></select><label><input id="showResultLabels" type="checkbox" checked>點位標籤</label><label><input id="showResultLine" type="checkbox" checked>起迄連線</label></div></div>
       <div id="offlineNotice" class="offline-notice" hidden>目前離線：仍可轉換、編輯及匯出，底圖暫停載入。</div>
       <div id="map"><div id="mapTooltip" class="map-tooltip"></div><div id="fileDropOverlay" class="file-drop-overlay" hidden><strong>放開以新增圖資圖層</strong><span>GeoJSON · KML · ZIP／散檔 Shapefile</span></div></div>
@@ -164,7 +166,7 @@ setActiveLayer(activeLayerId);
 
 let converted: ConvertedCoordinate[] = [];
 let outputMode: "replace" | "table" | "sentence" = "replace";
-let activeView: "coordinate" | "editor" = "coordinate";
+let activeView: "coordinate" | "editor" = "editor";
 let editorMode: EditorMode = "select";
 
 function escapeHtml(value: string): string { return value.replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!); }
@@ -183,6 +185,7 @@ async function importSpatialFiles(files: FileList | File[]): Promise<void> {
   alert(`已新增 ${datasets.length} 個圖層，共 ${total} 筆圖徵。${warnings.length ? `\n\n注意：\n${warnings.join("\n")}` : ""}`);
 }
 function closeContextMenu(): void { (<HTMLElement>$("#contextMenu")).hidden = true; }
+function removeFeatures(features = selectedFeatures()): void { if (!deleteFeatures(features)) return; recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); saveSession(); }
 function openContextMenu(event: MouseEvent, items: Array<{ action: string; icon: string; label: string; danger?: boolean; disabled?: boolean }>): void {
   event.preventDefault(); const menu = $("#contextMenu") as HTMLElement;
   menu.innerHTML = items.map((item) => `<button role="menuitem" data-context-action="${item.action}" class="${item.danger ? "danger" : ""}" ${item.disabled ? "disabled" : ""}><span aria-hidden="true">${item.icon}</span>${escapeHtml(item.label)}</button>`).join("");
@@ -314,6 +317,11 @@ rawInput.addEventListener("input", updateCoordinates); inputSystem.addEventListe
 [templateInput, replacementTemplate, xyDecimals, llDecimals, thousands, includeHeader].forEach((element) => element.addEventListener("input", updateCoordinates));
 templateSelect.addEventListener("change", () => { if (templateSelect.value !== "custom") { templateInput.value = templates[templateSelect.value as keyof typeof templates]; updateOutput(); } });
 document.querySelectorAll<HTMLButtonElement>(".app-tab").forEach((button) => button.addEventListener("click", () => setView(button.dataset.view as typeof activeView)));
+$("#toggleWorkbench").addEventListener("click", () => { document.body.classList.toggle("workbench-collapsed"); requestAnimationFrame(() => map.updateSize()); });
+$("#toggleHeader").addEventListener("click", () => { document.body.classList.toggle("header-collapsed"); requestAnimationFrame(() => map.updateSize()); });
+const savedTheme = localStorage.getItem("zhilian-theme"); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+$("#themeToggle").addEventListener("click", () => { const theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark"; document.documentElement.dataset.theme = theme; localStorage.setItem("zhilian-theme", theme); });
+document.querySelectorAll<HTMLButtonElement>("[data-menu-action]").forEach((button) => button.addEventListener("click", () => { const action = button.dataset.menuAction; if (action === "import") (<HTMLInputElement>$("#spatialFile")).click(); else if (action === "undo") undo(); else if (action === "fit") fitWorkFeatures(map); else if (action === "select") { selectAllFeatures(); populateProperties(selectedFeature()); } }));
 document.querySelectorAll<HTMLButtonElement>(".mode-tab").forEach((button) => button.addEventListener("click", () => setOutputMode(button.dataset.mode as typeof outputMode)));
 document.querySelectorAll<HTMLButtonElement>(".tool-button").forEach((button) => button.addEventListener("click", () => setTool(button.dataset.tool as EditorMode)));
 document.querySelectorAll<HTMLButtonElement>(".token-buttons button").forEach((button) => button.addEventListener("click", () => { const target = outputMode === "replace" ? replacementTemplate : templateInput; const start = target.selectionStart ?? target.value.length; target.setRangeText(button.dataset.token!, start, target.selectionEnd ?? start, "end"); target.focus(); updateOutput(); }));
@@ -329,9 +337,9 @@ $("#addCoordinateGeometry").addEventListener("click", addGeometryFromCoordinates
 $("#baseMap").addEventListener("change", (event) => setBaseMap((event.target as HTMLSelectElement).value as "emap" | "photo"));
 featurePreset.addEventListener("change", () => { const preset = featurePresets[featurePreset.value as FeaturePreset]; if (["point", "line", "polygon"].includes(editorMode)) { const nextMode = preset.geometry === "Point" ? "point" : preset.geometry === "LineString" ? "line" : "polygon"; setTool(nextMode); } });
 $("#saveProperties").addEventListener("click", () => { updateSelected({ name: featureName.value.trim() || featurePresets[featurePreset.value as FeaturePreset].label, note: featureNote.value.trim(), preset: featurePreset.value as FeaturePreset, layerId: featureLayer.value }); recordState("修改屬性"); renderFeatureList(); populateProperties(selectedFeature()); });
-$("#deleteFeature").addEventListener("click", () => { if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } });
+$("#deleteFeature").addEventListener("click", () => removeFeatures());
 $("#fitFeatures").addEventListener("click", () => fitWorkFeatures(map));
-$("#exportGeoJson").addEventListener("click", () => { if (!getWorkFeatures().length) { alert("工作圖層目前沒有可匯出的圖徵。"); return; } download(`智聯工程圖資_${new Date().toISOString().slice(0, 10)}.geojson`, exportGeoJson(), "application/geo+json;charset=utf-8"); });
+$("#exportSpatial").addEventListener("click", () => { if (!getWorkFeatures().length) { alert("工作圖層目前沒有可匯出的圖徵。"); return; } const date = new Date().toISOString().slice(0, 10); const type = (<HTMLSelectElement>$("#exportFormat")).value; if (type === "kml") download(`智聯工程圖資_${date}.kml`, exportKml(), "application/vnd.google-earth.kml+xml;charset=utf-8"); else download(`智聯工程圖資_${date}.geojson`, exportGeoJson(), "application/geo+json;charset=utf-8"); });
 $("#spatialFile").addEventListener("change", async (event) => { const input = event.target as HTMLInputElement; if (!input.files?.length) return; try { await importSpatialFiles(input.files); } catch (error) { alert(`無法匯入圖資：${(error as Error).message}`); } finally { input.value = ""; } });
 const mapWorkspace = $(".map-workspace") as HTMLElement; const fileDropOverlay = $("#fileDropOverlay") as HTMLElement; let fileDragDepth = 0;
 mapWorkspace.addEventListener("dragenter", (event) => { if (!event.dataTransfer?.types.includes("Files")) return; event.preventDefault(); fileDragDepth++; fileDropOverlay.hidden = false; mapWorkspace.classList.add("file-dragging"); });
@@ -344,7 +352,7 @@ $("#clearSession").addEventListener("click", () => { if (confirm("確定清除�
 
 $("#undoButton").addEventListener("click", undo); $("#redoButton").addEventListener("click", redo);
 document.querySelectorAll<HTMLButtonElement>("[data-map-tool]").forEach((button) => button.addEventListener("click", () => setTool(button.dataset.mapTool as EditorMode)));
-$("#toolbarZoomAll").addEventListener("click", () => fitWorkFeatures(map)); $("#toolbarUndo").addEventListener("click", undo); $("#toolbarRedo").addEventListener("click", redo); $("#toolbarDelete").addEventListener("click", () => { if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } });
+$("#toolbarZoomAll").addEventListener("click", () => fitWorkFeatures(map)); $("#toolbarUndo").addEventListener("click", undo); $("#toolbarRedo").addEventListener("click", redo); $("#toolbarDelete").addEventListener("click", () => removeFeatures());
 $("#cancelEdit").addEventListener("click", () => { cancelEditorMode(map); setTool("select"); });
 $("#removeVertex").addEventListener("click", () => { if (!removeLastDrawPoint()) alert("目前沒有正在繪製的線或面圖徵。"); });
 $("#runBuffer").addEventListener("click", runBuffer);
@@ -386,7 +394,7 @@ $("#contextMenu").addEventListener("click", async (event) => {
   else if (action === "zoom-selection" && contextFeature) fitFeatures(map, [contextFeature]);
   else if (action === "copy-feature" && contextFeature) { selectFeature(contextFeature); clipboardGeoJson = exportGeoJson([contextFeature]); await navigator.clipboard.writeText(clipboardGeoJson); }
   else if (action === "duplicate-feature" && contextFeature) { selectFeature(contextFeature); if (duplicateSelected()) { recordState("複製圖徵"); renderFeatureList(); } }
-  else if (action === "delete-feature" && contextFeature) { selectFeature(contextFeature); if (deleteSelected()) { recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); } }
+  else if (action === "delete-feature" && contextFeature) removeFeatures([contextFeature]);
   else if (action === "copy-coordinate" && contextLonLat) { const [lon, lat] = contextLonLat; const twd = convertPair({ first: lat, second: lon, sourceText: "" }, "wgs84-latlon", 0); await navigator.clipboard.writeText(`${lat.toFixed(7)}, ${lon.toFixed(7)}\t${Math.round(twd.x)}, ${Math.round(twd.y)}`); }
   else if (action === "add-point-here" && contextLonLat) { addGeoFeature({ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: contextLonLat } }, { preset: "project-point", presetLabel: featurePresets["project-point"].label, name: "地圖新增點", note: "由地圖右鍵新增", layerId: activeLayerId }); recordState("地圖新增點"); renderFeatureList(); populateProperties(selectedFeature()); }
   else if (action === "paste-feature" && clipboardGeoJson) { importGeoJson(undefined, clipboardGeoJson); recordState("貼上圖徵"); renderFeatureList(); }
@@ -404,7 +412,7 @@ window.addEventListener("keydown", (event) => {
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") { event.preventDefault(); selectAllFeatures(); populateProperties(selectedFeature()); }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") { event.preventDefault(); clipboardGeoJson = exportGeoJson(selectedFeatures()); }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && clipboardGeoJson) { event.preventDefault(); importGeoJson(undefined, clipboardGeoJson); const imported = getWorkFeatures().slice(-JSON.parse(clipboardGeoJson).features.length); imported.forEach((feature) => { feature.getGeometry()?.translate(8, -8); feature.set("name", `${feature.get("name") || "圖徵"} 複本`); }); recordState("貼上圖徵"); renderFeatureList(); }
-  else if ((event.key === "Delete" || event.key === "Del") && selectedFeatures().length) { event.preventDefault(); deleteSelected(); recordState("刪除圖徵"); populateProperties(null); renderFeatureList(); }
+  else if ((event.key === "Delete" || event.key === "Del") && selectedFeatures().length) { event.preventDefault(); removeFeatures(); }
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") { event.preventDefault(); if (duplicateSelected()) { recordState("複製圖徵"); renderFeatureList(); populateProperties(selectedFeature()); } }
   else if (event.key === " ") { event.preventDefault(); setTool("browse"); }
 });

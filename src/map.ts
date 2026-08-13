@@ -4,6 +4,7 @@ import Overlay from "ol/Overlay";
 import Feature from "ol/Feature";
 import type { FeatureLike } from "ol/Feature";
 import GeoJSON from "ol/format/GeoJSON";
+import KML from "ol/format/KML";
 import Point from "ol/geom/Point";
 import LineString from "ol/geom/LineString";
 import type Geometry from "ol/geom/Geometry";
@@ -123,6 +124,7 @@ export function toggleFeatureSelection(feature: Feature<Geometry>): void { const
 export function selectAllFeatures(): void { selectInteraction?.getFeatures().clear(); selectInteraction?.getFeatures().extend(getWorkFeatures()); }
 export function updateSelected(properties: { name: string; note: string; preset: FeaturePreset; layerId?: string }): void { selectedFeatures().forEach((feature, index) => feature.setProperties({ ...properties, name: index ? `${properties.name} ${index + 1}` : properties.name, presetLabel: featurePresets[properties.preset].label, layerId: properties.layerId || feature.get("layerId") || activeLayerId })); workLayer.changed(); }
 export function deleteSelected(): number { const selected = selectedFeatures(); selectInteraction?.getFeatures().clear(); selected.forEach((feature) => workSource.removeFeature(feature)); return selected.length; }
+export function deleteFeatures(features: Feature<Geometry>[]): number { const existing = features.filter((feature) => workSource.hasFeature(feature)); if (!existing.length) return 0; const selection = selectInteraction?.getFeatures(); existing.forEach((feature) => { selection?.remove(feature); workSource.removeFeature(feature); }); return existing.length; }
 export function duplicateSelected(): number { const clones = selectedFeatures().map((feature) => { const clone = feature.clone() as Feature<Geometry>; clone.getGeometry()?.translate(8, -8); clone.set("name", `${feature.get("name") || "圖徵"} 複本`); workSource.addFeature(clone); return clone; }); selectInteraction?.getFeatures().clear(); selectInteraction?.getFeatures().extend(clones); return clones.length; }
 export function clearWorkFeatures(): void { selectInteraction?.getFeatures().clear(); workSource.clear(); }
 export function getWorkFeatures(): Feature<Geometry>[] { return workSource.getFeatures() as Feature<Geometry>[]; }
@@ -131,6 +133,7 @@ export function fitFeatures(map: Map, features: Feature<Geometry>[]): void { if 
 export function layerFeatures(layerId: string): Feature<Geometry>[] { return getWorkFeatures().filter((feature) => feature.get("layerId") === layerId); }
 export function selectLayerFeatures(layerId: string): void { selectInteraction?.getFeatures().clear(); selectInteraction?.getFeatures().extend(layerFeatures(layerId)); }
 export function exportGeoJson(features: Feature<Geometry>[] = getWorkFeatures()): string { return format.writeFeatures(features, { featureProjection: "EPSG:3857", dataProjection: "EPSG:4326", decimals: 7 }); }
+export function exportKml(features: Feature<Geometry>[] = getWorkFeatures()): string { return new KML({ extractStyles: false }).writeFeatures(features, { featureProjection: "EPSG:3857", dataProjection: "EPSG:4326" }); }
 export function selectedGeoFeatures(): GeoFeature<GeoGeometry>[] { return JSON.parse(exportGeoJson(selectedFeatures())).features; }
 export function replaceWorkGeoJson(text: string): void { clearWorkFeatures(); importGeoJson(undefined, text); }
 export function addGeoFeature(feature: GeoFeature<GeoGeometry>, properties: Record<string, unknown>): Feature<Geometry> { const created = format.readFeature({ ...feature, properties: { ...feature.properties, ...properties } }, { dataProjection: "EPSG:4326", featureProjection: "EPSG:3857" }) as Feature<Geometry>; if (!created.get("layerId")) created.set("layerId", activeLayerId); workSource.addFeature(created); selectFeature(created); return created; }
