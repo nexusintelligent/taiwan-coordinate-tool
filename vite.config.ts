@@ -25,7 +25,8 @@ export default defineConfig({
         ]
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg}"],
+        globPatterns: ["**/*.{js,css,html,svg,geojson}"],
+        maximumFileSizeToCacheInBytes: 9 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/wmts\.nlsc\.gov\.tw\//,
