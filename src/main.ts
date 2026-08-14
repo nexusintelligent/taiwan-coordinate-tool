@@ -341,7 +341,7 @@ function addGeometryFromCoordinates(): void { const type = (<HTMLSelectElement>$
 $("#locateButton").addEventListener("click", locateFromInput); $("#locateInput").addEventListener("keydown", (event) => { if ((event as KeyboardEvent).key === "Enter") locateFromInput(); });
 $("#addCoordinateGeometry").addEventListener("click", addGeometryFromCoordinates);
 $("#baseMap").addEventListener("change", (event) => setBaseMap((event.target as HTMLSelectElement).value as "emap" | "photo"));
-document.querySelector<HTMLInputElement>("#showRegionalDrainage")?.addEventListener("change", (event) => setRegionalDrainageVisible(event.currentTarget.checked));
+document.querySelector<HTMLInputElement>("#showRegionalDrainage")?.addEventListener("change", (event) => setRegionalDrainageVisible((event.currentTarget as HTMLInputElement).checked));
 featurePreset.addEventListener("change", () => { const preset = featurePresets[featurePreset.value as FeaturePreset]; if (["point", "line", "polygon"].includes(editorMode)) { const nextMode = preset.geometry === "Point" ? "point" : preset.geometry === "LineString" ? "line" : "polygon"; setTool(nextMode); } });
 $("#saveProperties").addEventListener("click", () => { updateSelected({ name: featureName.value.trim() || featurePresets[featurePreset.value as FeaturePreset].label, note: featureNote.value.trim(), preset: featurePreset.value as FeaturePreset, layerId: featureLayer.value }); recordState("修改屬性"); renderFeatureList(); populateProperties(selectedFeature()); });
 $("#deleteFeature").addEventListener("click", () => removeFeatures());
