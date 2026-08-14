@@ -12,7 +12,7 @@ import {
   addGeoFeature, cancelEditorMode, clearTbnRecords, clearWorkFeatures, configureLayers, createMap, deleteFeatures,
   duplicateSelected, exportGeoJson, exportKml, featurePresets, featureSummary, finishDrawing, fitFeatures, fitWorkFeatures, getWorkFeatures, importGeoJson, layerFeatures, locateMap,
   removeLastDrawPoint, replaceWorkGeoJson, selectAllFeatures, selectFeature, selectedFeature, selectedFeatures,
-  selectedGeoFeatures, selectLayerFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, showPoints, showTbnRecords,
+  selectedGeoFeatures, selectLayerFeatures, setActiveLayer, setBaseMap, setEditorMode, setMapDisplay, setRegionalDrainageVisible, showPoints, showTbnRecords,
   toggleFeatureSelection, updateSelected, type EditorMode, type FeaturePreset, type LayerDefinition, type TbnRecord,
 } from "./map";
 import type { BooleanOperation, PolygonFeature } from "./spatial";
@@ -341,6 +341,7 @@ function addGeometryFromCoordinates(): void { const type = (<HTMLSelectElement>$
 $("#locateButton").addEventListener("click", locateFromInput); $("#locateInput").addEventListener("keydown", (event) => { if ((event as KeyboardEvent).key === "Enter") locateFromInput(); });
 $("#addCoordinateGeometry").addEventListener("click", addGeometryFromCoordinates);
 $("#baseMap").addEventListener("change", (event) => setBaseMap((event.target as HTMLSelectElement).value as "emap" | "photo"));
+$("#showRegionalDrainage").addEventListener("change", (event) => setRegionalDrainageVisible((event.target as HTMLInputElement).checked));
 featurePreset.addEventListener("change", () => { const preset = featurePresets[featurePreset.value as FeaturePreset]; if (["point", "line", "polygon"].includes(editorMode)) { const nextMode = preset.geometry === "Point" ? "point" : preset.geometry === "LineString" ? "line" : "polygon"; setTool(nextMode); } });
 $("#saveProperties").addEventListener("click", () => { updateSelected({ name: featureName.value.trim() || featurePresets[featurePreset.value as FeaturePreset].label, note: featureNote.value.trim(), preset: featurePreset.value as FeaturePreset, layerId: featureLayer.value }); recordState("修改屬性"); renderFeatureList(); populateProperties(selectedFeature()); });
 $("#deleteFeature").addEventListener("click", () => removeFeatures());

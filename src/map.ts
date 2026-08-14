@@ -51,6 +51,7 @@ const workSource = new VectorSource();
 const tbnSource = new VectorSource();
 const locateSource = new VectorSource();
 const format = new GeoJSON();
+const drainageSource = new VectorSource({ url: "./data/regional-drainage.geojson", format });
 const display = { results: true, resultLabels: true, resultLine: true, work: true, workLabels: true, tbn: true };
 let layerDefinitions: LayerDefinition[] = [];
 let drawInteraction: Draw | undefined;
@@ -75,7 +76,9 @@ function workStyle(featureLike: FeatureLike): Style | undefined {
 }
 
 function tbnStyle(featureLike: FeatureLike): Style | undefined { if (!display.tbn) return undefined; const feature = featureLike as Feature; const sensitive = feature.get("sensitiveCategory") && feature.get("sensitiveCategory") !== "無"; return new Style({ image: new Circle({ radius: sensitive ? 8 : 6, fill: new Fill({ color: sensitive ? "rgba(183,72,75,.78)" : "rgba(68,121,108,.78)" }), stroke: new Stroke({ color: "#fff", width: 1.5 }) }) }); }
+const drainageStyle = new Style({ stroke: new Stroke({ color: "rgba(30, 111, 181, .82)", width: 2 }) });
 const resultLayer = new VectorLayer({ source: resultSource, style: resultStyle, zIndex: 20 });
+const drainageLayer = new VectorLayer({ source: drainageSource, style: drainageStyle, zIndex: 15, visible: true });
 const workLayer = new VectorLayer({ source: workSource, style: workStyle, zIndex: 30 });
 const tbnLayer = new VectorLayer({ source: tbnSource, style: tbnStyle, zIndex: 40 });
 const locateLayer = new VectorLayer({ source: locateSource, zIndex: 50, style: new Style({ image: new Circle({ radius: 10, fill: new Fill({ color: "#ffd052" }), stroke: new Stroke({ color: "#d94e31", width: 4 }) }) }) });
@@ -84,7 +87,7 @@ export interface MapCallbacks { cursor: (longitude: number, latitude: number) =>
 
 export function createMap(target: HTMLElement, tooltipElement: HTMLElement, callbacks: MapCallbacks): Map {
   const tooltip = new Overlay({ element: tooltipElement, offset: [12, 12], positioning: "bottom-left", stopEvent: false });
-  const map = new Map({ target, layers: [emap, photo, resultLayer, workLayer, tbnLayer, locateLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5 }) });
+  const map = new Map({ target, layers: [emap, photo, drainageLayer, resultLayer, workLayer, tbnLayer, locateLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5 }) });
   selectInteraction = new Select({ layers: [workLayer], multi: true, condition: singleClick, toggleCondition: platformModifierKeyOnly, style: (feature) => [workStyle(feature)!, new Style({ stroke: new Stroke({ color: "#0f5bff", width: 3, lineDash: [5, 4] }), image: new Circle({ radius: 11, stroke: new Stroke({ color: "#0f5bff", width: 3 }) }) })] });
   map.addInteraction(selectInteraction); selectInteraction.on("select", () => callbacks.selection(selectedFeatures()));
   workSource.on("change", callbacks.changed);
@@ -93,7 +96,8 @@ export function createMap(target: HTMLElement, tooltipElement: HTMLElement, call
     const feature = map.forEachFeatureAtPixel(event.pixel, (candidate) => candidate as Feature<Geometry>); target.style.cursor = feature ? "pointer" : "";
     if (!feature) { tooltip.setPosition(undefined); return; }
     const result = feature.get("point") as ConvertedCoordinate | undefined; const geometry = feature.getGeometry(); const measurement = geometry ? measureGeometry(geometry) : "";
-    if (feature.get("kind") === "tbn") tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("vernacularName") || feature.get("scientificName") || "TBN 觀測紀錄")}</strong><span>${escapeHtml(feature.get("taxonGroup") || "未分類")} · ${feature.get("year") || "日期不明"}</span><span>${escapeHtml(feature.get("county") || "")}${escapeHtml(feature.get("municipality") || "")}</span><span>${feature.get("sensitiveCategory") !== "無" ? `敏感資料：${escapeHtml(feature.get("sensitiveCategory"))}` : "公開座標"}</span>`;
+    if (feature.get("DRAIN_NAME") || feature.get("DRAIN_NO")) tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("DRAIN_NAME") || feature.get("RV_NAME") || "區域排水")}</strong><span>${escapeHtml(feature.get("DR_LV") || "區域排水圖層")}${feature.get("DRAIN_NO") ? ` · ${escapeHtml(feature.get("DRAIN_NO"))}` : ""}</span><span>${escapeHtml(feature.get("COUN_NAME") || "")}</span>`;
+    else if (feature.get("kind") === "tbn") tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("vernacularName") || feature.get("scientificName") || "TBN 觀測紀錄")}</strong><span>${escapeHtml(feature.get("taxonGroup") || "未分類")} · ${feature.get("year") || "日期不明"}</span><span>${escapeHtml(feature.get("county") || "")}${escapeHtml(feature.get("municipality") || "")}</span><span>${feature.get("sensitiveCategory") !== "無" ? `敏感資料：${escapeHtml(feature.get("sensitiveCategory"))}` : "公開座標"}</span>`;
     else tooltipElement.innerHTML = result ? `<strong>${escapeHtml(result.label)}</strong><span>WGS84：${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}</span><span>TWD97：X ${Math.round(result.x).toLocaleString()}、Y ${Math.round(result.y).toLocaleString()}</span>` : `<strong>${escapeHtml(feature.get("name") || featurePresets[feature.get("preset") as FeaturePreset]?.label || "工作圖徵")}</strong><span>${escapeHtml(feature.get("presetLabel") || "公司工作圖層")}</span>${measurement ? `<span>${measurement}</span>` : ""}`;
     tooltip.setPosition(event.coordinate);
   });
@@ -103,6 +107,7 @@ export function createMap(target: HTMLElement, tooltipElement: HTMLElement, call
 function escapeHtml(value: string): string { return String(value).replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[character]!); }
 function measureGeometry(geometry: Geometry): string { if (geometry.getType().includes("LineString")) { const length = getLength(geometry); return length >= 1000 ? `長度 ${(length / 1000).toFixed(2)} km` : `長度 ${length.toFixed(1)} m`; } if (geometry.getType().includes("Polygon")) { const area = getArea(geometry); return area >= 1_000_000 ? `面積 ${(area / 1_000_000).toFixed(2)} km²` : `面積 ${area.toFixed(0)} m²`; } return ""; }
 export function setBaseMap(type: "emap" | "photo"): void { emap.setVisible(type === "emap"); photo.setVisible(type === "photo"); }
+export function setRegionalDrainageVisible(visible: boolean): void { drainageLayer.setVisible(visible); }
 export function setMapDisplay(options: Partial<typeof display>): void { Object.assign(display, options); resultLayer.changed(); workLayer.changed(); tbnLayer.changed(); }
 export function configureLayers(definitions: LayerDefinition[]): void { layerDefinitions = definitions.map((item) => ({ ...item })); workLayer.changed(); }
 export function setActiveLayer(id: string): void { activeLayerId = id; }
