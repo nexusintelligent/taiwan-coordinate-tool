@@ -49,13 +49,15 @@ export async function readSpatialFiles(input: FileList | File[]): Promise<Import
   for (const file of files) {
     const ext = extension(file.name); const base = stem(file.name).toLowerCase();
     if (["shp", "shx", "dbf", "prj", "cpg"].includes(ext)) { looseShapes.set(base, [...(looseShapes.get(base) ?? []), file]); continue; }
-    if (ext === "zip") { results.push(...await readZip(file)); continue; }
+    if (ext === "zip") { try { results.push(...await readZip(file)); } catch { throw new Error(`${file.name} 不是有效的 ZIP Shapefile；請確認壓縮檔內含同名 .shp、.shx、.dbf，且不是把 7z／RAR 改副檔名為 ZIP。`); } continue; }
+    if (["7z", "rar"].includes(ext)) throw new Error(`${file.name} 使用 ${ext.toUpperCase()} 壓縮。瀏覽器離線版目前無法可靠解壓此格式，請先解壓後一次拖入 .shp/.shx/.dbf/.prj，或重新壓縮為標準 ZIP。`);
+    if (ext === "kmz") throw new Error(`${file.name} 是 KMZ；請先在 QGIS 或 Google Earth 另存為 KML 後匯入。`);
     if (ext === "kml") {
       const features = kmlFormat.readFeatures(await file.text(), { dataProjection: "EPSG:4326", featureProjection: "EPSG:4326" });
       results.push({ name: stem(file.name), geojson: geojsonFormat.writeFeatures(features, { dataProjection: "EPSG:4326", featureProjection: "EPSG:4326" }), warnings: [] }); continue;
     }
     if (["geojson", "json"].includes(ext)) { const text = await file.text(); JSON.parse(text); results.push({ name: stem(file.name), geojson: text, warnings: [] }); continue; }
-    throw new Error(`不支援 ${file.name}；請使用 GeoJSON、KML 或 ZIP／散檔 Shapefile。`);
+    throw new Error(`不支援 ${file.name}；請使用 GeoJSON、KML、標準 ZIP 或散檔 Shapefile。`);
   }
   for (const shapeFiles of looseShapes.values()) results.push(await readLooseShape(shapeFiles));
   return results;
