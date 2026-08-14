@@ -71,7 +71,7 @@ export const referenceLayerDefinitions = [
 ] as const;
 const referenceLayers = new globalThis.Map<string, VectorLayer<VectorSource>>();
 function referenceStyle(color:string): (feature:FeatureLike)=>Style { return (feature)=>{ const geometry=feature.getGeometry(); return new Style({ image:new Circle({radius:5,fill:new Fill({color}),stroke:new Stroke({color:"#fff",width:1})}), fill:new Fill({color:`${color}26`}), stroke:new Stroke({color,width:2}), zIndex:10 }); }; }
-referenceLayerDefinitions.forEach((definition)=>{ const source=new VectorSource({url:`./data/reference/${definition.id}.geojson`,format}); source.on("addfeature",(event)=>event.feature?.setProperties({kind:"reference",referenceName:definition.name})); referenceLayers.set(definition.id,new VectorLayer({source,style:referenceStyle(definition.color),visible:false,zIndex:12})); });
+referenceLayerDefinitions.forEach((definition)=>{ const source=new VectorSource({url:`./data/reference/${definition.id}.geojson`,format}); source.on("addfeature",(event)=>event.feature?.setProperties({kind:"reference",referenceId:definition.id,referenceName:definition.name})); referenceLayers.set(definition.id,new VectorLayer({source,style:referenceStyle(definition.color),visible:false,zIndex:12})); });
 
 function workStyle(featureLike: FeatureLike): Style | undefined {
   const feature = featureLike as Feature; if (!display.work) return undefined;
@@ -119,6 +119,9 @@ function measureGeometry(geometry: Geometry): string { if (geometry.getType().in
 export function setBaseMap(type: "emap" | "photo"): void { emap.setVisible(type === "emap"); photo.setVisible(type === "photo"); }
 export function setRegionalDrainageVisible(visible: boolean): void { drainageLayer.setVisible(visible); }
 export function setReferenceLayerVisible(id:string, visible:boolean): void { referenceLayers.get(id)?.setVisible(visible); }
+export function isReferenceLayerVisible(id:string): boolean { return Boolean(referenceLayers.get(id)?.getVisible()); }
+export function fitReferenceLayer(map:Map,id:string): void { const layer=referenceLayers.get(id); if(!layer)return; const source=layer.getSource(); const fit=()=>{ if(source?.getFeatures().length){ const extent=source.getExtent(); map.getView().fit(extent,{padding:[70,70,70,70],maxZoom:16,duration:350}); } }; if(source?.getFeatures().length)fit(); else source?.once("featuresloadend",fit); layer.setVisible(true); }
+export function visibleReferenceLegendItems(): Array<{id:string;name:string;color:string}> { return referenceLayerDefinitions.filter((definition)=>isReferenceLayerVisible(definition.id)).map(({id,name,color})=>({id,name,color})); }
 export function setMapDisplay(options: Partial<typeof display>): void { Object.assign(display, options); resultLayer.changed(); workLayer.changed(); tbnLayer.changed(); }
 export function configureLayers(definitions: LayerDefinition[]): void { layerDefinitions = definitions.map((item) => ({ ...item })); workLayer.changed(); }
 export function setActiveLayer(id: string): void { activeLayerId = id; }
