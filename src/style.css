@@ -148,7 +148,8 @@ td small { display:block; max-width:135px; overflow:hidden; color:#84908b; text-
 .tbn-summary p { grid-column:1/-1; margin:2px 0 0; color:var(--muted); font-size:8px; }
 .reference-layer-list { display:grid; gap:6px; margin-top:10px; }
 .reference-layer-list details { border:1px solid var(--line); background:#f5f4ee; }
-.reference-layer-list summary { padding:7px 9px; color:var(--green); cursor:pointer; font-size:10px; font-weight:800; }
+.reference-layer-list summary { display:flex; align-items:center; gap:7px; padding:7px 9px; color:var(--green); cursor:pointer; font-size:10px; font-weight:800; }
+.reference-layer-list summary input { accent-color:var(--green); }
 .reference-layer-list label { display:flex; flex-direction:row; align-items:center; gap:7px; padding:6px 10px; border-top:1px solid var(--line); font-size:9px; }
 .reference-layer-list i { width:16px; height:7px; flex:0 0 16px; background:var(--reference-color); border:1px solid #fff; box-shadow:0 0 0 1px var(--reference-color); }
 .shortcut-help { cursor:default; }
