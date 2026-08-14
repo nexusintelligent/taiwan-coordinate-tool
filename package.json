@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@mapbox/shp-write": "^0.4.3",
     "@turf/buffer": "^7.4.0",
     "@turf/difference": "^7.4.0",
     "@turf/helpers": "^7.4.0",
