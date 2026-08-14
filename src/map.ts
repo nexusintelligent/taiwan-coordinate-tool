@@ -44,15 +44,15 @@ export const featurePresets: Record<FeaturePreset, { label: string; geometry: "P
   "other-point": { label: "其他單位案件", geometry: "Point", color: "#729b6f" },
 };
 
-const emap = new TileLayer({ source: new XYZ({ url: "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}", attributions: "© 內政部國土測繪中心", crossOrigin: "anonymous" }), visible: true });
-const photo = new TileLayer({ source: new XYZ({ url: "https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}", attributions: "© 內政部國土測繪中心", crossOrigin: "anonymous" }), visible: false });
+const emap = new TileLayer({ source: new XYZ({ url: "https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}", attributions: "© 內政部國土測繪中心", crossOrigin: "anonymous", maxZoom: 19, transition: 0, wrapX: false }), visible: true });
+const photo = new TileLayer({ source: new XYZ({ url: "https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}", attributions: "© 內政部國土測繪中心", crossOrigin: "anonymous", maxZoom: 19, transition: 0, wrapX: false }), visible: false });
 const resultSource = new VectorSource();
 const workSource = new VectorSource();
 const tbnSource = new VectorSource();
 const locateSource = new VectorSource();
 const format = new GeoJSON();
 const drainageSource = new VectorSource({ url: "./data/regional-drainage.geojson", format });
-const display = { results: true, resultLabels: true, resultLine: true, work: true, workLabels: true, tbn: true };
+const display = { results: true, resultLabels: true, work: true, workLabels: true, tbn: true };
 let layerDefinitions: LayerDefinition[] = [];
 let drawInteraction: Draw | undefined;
 let modifyInteraction: Modify | undefined;
@@ -62,7 +62,16 @@ let activePreset: FeaturePreset = "project-point";
 let activeLayerId = "project";
 
 function labelStyle(text: string): Text { return new Text({ text, offsetY: -18, font: "600 13px 'Noto Sans TC', sans-serif", fill: new Fill({ color: "#103b35" }), backgroundFill: new Fill({ color: "rgba(255,253,247,.94)" }), padding: [3, 6, 3, 6] }); }
-function resultStyle(featureLike: FeatureLike): Style | undefined { const feature = featureLike as Feature; if (!display.results) return undefined; if (feature.get("kind") === "result-line") return display.resultLine ? new Style({ stroke: new Stroke({ color: "#e05d3d", width: 4 }) }) : undefined; return new Style({ image: new Circle({ radius: 8, fill: new Fill({ color: "#efb750" }), stroke: new Stroke({ color: "#103b35", width: 3 }) }), text: display.resultLabels ? labelStyle(feature.get("name") ?? "") : undefined }); }
+function resultStyle(featureLike: FeatureLike): Style | undefined { const feature = featureLike as Feature; if (!display.results) return undefined; return new Style({ image: new Circle({ radius: 8, fill: new Fill({ color: "#efb750" }), stroke: new Stroke({ color: "#103b35", width: 3 }) }), text: display.resultLabels ? labelStyle(feature.get("name") ?? "") : undefined }); }
+
+export const referenceLayerDefinitions = [
+  { id:"leopard-cat-potential", group:"關注物種", name:"石虎潛在棲地", color:"#c77d32" }, { id:"leopard-cat-critical", group:"關注物種", name:"石虎重要棲地", color:"#9c3f2f" }, { id:"important-bird-area", group:"關注物種", name:"重要野鳥棲地", color:"#7d4c9f" },
+  { id:"ebird-waterbird", group:"國土綠網", name:"eBird 水鳥熱點", color:"#55a9df" }, { id:"fauna-hotspot", group:"國土綠網", name:"動物多樣性熱區", color:"#d79445" }, { id:"redlist-plant-distribution", group:"國土綠網", name:"紅皮書受脅植物分布", color:"#df6e91" }, { id:"redlist-plant-habitat", group:"國土綠網", name:"紅皮書受脅植物重要棲地", color:"#b75d87" }, { id:"green-network", group:"國土綠網", name:"綠網關注區域", color:"#52a85e" }, { id:"priority-river", group:"國土綠網", name:"關注河川", color:"#3186c4" }, { id:"priority-farmland-water", group:"國土綠網", name:"關注農田圳溝或埤塘池沼", color:"#42a9a1" },
+  { id:"protection-forest", group:"法定保護區", name:"保安林", color:"#24764b" }, { id:"national-park", group:"法定保護區", name:"國家公園", color:"#2c905c" }, { id:"important-wetland", group:"法定保護區", name:"國家重要濕地", color:"#36a6b7" }, { id:"national-forest", group:"法定保護區", name:"國有林事業區", color:"#557b3b" }, { id:"coastal-protection", group:"法定保護區", name:"沿海一般保護區", color:"#489fc2" }, { id:"wildlife-habitat", group:"法定保護區", name:"野生動物重要棲息環境", color:"#7960a8" },
+] as const;
+const referenceLayers = new globalThis.Map<string, VectorLayer<VectorSource>>();
+function referenceStyle(color:string): (feature:FeatureLike)=>Style { return (feature)=>{ const geometry=feature.getGeometry(); return new Style({ image:new Circle({radius:5,fill:new Fill({color}),stroke:new Stroke({color:"#fff",width:1})}), fill:new Fill({color:`${color}26`}), stroke:new Stroke({color,width:2}), zIndex:10 }); }; }
+referenceLayerDefinitions.forEach((definition)=>{ const source=new VectorSource({url:`./data/reference/${definition.id}.geojson`,format}); source.on("addfeature",(event)=>event.feature?.setProperties({kind:"reference",referenceName:definition.name})); referenceLayers.set(definition.id,new VectorLayer({source,style:referenceStyle(definition.color),visible:false,zIndex:12})); });
 
 function workStyle(featureLike: FeatureLike): Style | undefined {
   const feature = featureLike as Feature; if (!display.work) return undefined;
@@ -87,7 +96,7 @@ export interface MapCallbacks { cursor: (longitude: number, latitude: number) =>
 
 export function createMap(target: HTMLElement, tooltipElement: HTMLElement, callbacks: MapCallbacks): Map {
   const tooltip = new Overlay({ element: tooltipElement, offset: [12, 12], positioning: "bottom-left", stopEvent: false });
-  const map = new Map({ target, layers: [emap, photo, drainageLayer, resultLayer, workLayer, tbnLayer, locateLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5 }) });
+  const map = new Map({ target, layers: [emap, photo, ...referenceLayers.values(), drainageLayer, resultLayer, workLayer, tbnLayer, locateLayer], overlays: [tooltip], view: new View({ center: fromLonLat([120.95, 23.7]), zoom: 7.5, maxZoom: 19, minZoom: 5 }) });
   selectInteraction = new Select({ layers: [workLayer], multi: true, condition: singleClick, toggleCondition: platformModifierKeyOnly, style: (feature) => [workStyle(feature)!, new Style({ stroke: new Stroke({ color: "#0f5bff", width: 3, lineDash: [5, 4] }), image: new Circle({ radius: 11, stroke: new Stroke({ color: "#0f5bff", width: 3 }) }) })] });
   map.addInteraction(selectInteraction); selectInteraction.on("select", () => callbacks.selection(selectedFeatures()));
   workSource.on("change", callbacks.changed);
@@ -98,6 +107,7 @@ export function createMap(target: HTMLElement, tooltipElement: HTMLElement, call
     const result = feature.get("point") as ConvertedCoordinate | undefined; const geometry = feature.getGeometry(); const measurement = geometry ? measureGeometry(geometry) : "";
     if (feature.get("DRAIN_NAME") || feature.get("DRAIN_NO")) tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("DRAIN_NAME") || feature.get("RV_NAME") || "區域排水")}</strong><span>${escapeHtml(feature.get("DR_LV") || "區域排水圖層")}${feature.get("DRAIN_NO") ? ` · ${escapeHtml(feature.get("DRAIN_NO"))}` : ""}</span><span>${escapeHtml(feature.get("COUN_NAME") || "")}</span>`;
     else if (feature.get("kind") === "tbn") tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("vernacularName") || feature.get("scientificName") || "TBN 觀測紀錄")}</strong><span>${escapeHtml(feature.get("taxonGroup") || "未分類")} · ${feature.get("year") || "日期不明"}</span><span>${escapeHtml(feature.get("county") || "")}${escapeHtml(feature.get("municipality") || "")}</span><span>${feature.get("sensitiveCategory") !== "無" ? `敏感資料：${escapeHtml(feature.get("sensitiveCategory"))}` : "公開座標"}</span>`;
+    else if (feature.get("kind") === "reference") tooltipElement.innerHTML = `<strong>${escapeHtml(feature.get("referenceName") || "預設參考圖層")}</strong><span>預設生態與法定圖資</span>`;
     else tooltipElement.innerHTML = result ? `<strong>${escapeHtml(result.label)}</strong><span>WGS84：${result.latitude.toFixed(6)}, ${result.longitude.toFixed(6)}</span><span>TWD97：X ${Math.round(result.x).toLocaleString()}、Y ${Math.round(result.y).toLocaleString()}</span>` : `<strong>${escapeHtml(feature.get("name") || featurePresets[feature.get("preset") as FeaturePreset]?.label || "工作圖徵")}</strong><span>${escapeHtml(feature.get("presetLabel") || "公司工作圖層")}</span>${measurement ? `<span>${measurement}</span>` : ""}`;
     tooltip.setPosition(event.coordinate);
   });
@@ -108,11 +118,12 @@ function escapeHtml(value: string): string { return String(value).replace(/[&<>"
 function measureGeometry(geometry: Geometry): string { if (geometry.getType().includes("LineString")) { const length = getLength(geometry); return length >= 1000 ? `長度 ${(length / 1000).toFixed(2)} km` : `長度 ${length.toFixed(1)} m`; } if (geometry.getType().includes("Polygon")) { const area = getArea(geometry); return area >= 1_000_000 ? `面積 ${(area / 1_000_000).toFixed(2)} km²` : `面積 ${area.toFixed(0)} m²`; } return ""; }
 export function setBaseMap(type: "emap" | "photo"): void { emap.setVisible(type === "emap"); photo.setVisible(type === "photo"); }
 export function setRegionalDrainageVisible(visible: boolean): void { drainageLayer.setVisible(visible); }
+export function setReferenceLayerVisible(id:string, visible:boolean): void { referenceLayers.get(id)?.setVisible(visible); }
 export function setMapDisplay(options: Partial<typeof display>): void { Object.assign(display, options); resultLayer.changed(); workLayer.changed(); tbnLayer.changed(); }
 export function configureLayers(definitions: LayerDefinition[]): void { layerDefinitions = definitions.map((item) => ({ ...item })); workLayer.changed(); }
 export function setActiveLayer(id: string): void { activeLayerId = id; }
 
-export function showPoints(map: Map, points: ConvertedCoordinate[]): void { resultSource.clear(); const projected = points.map((point) => fromLonLat([point.longitude, point.latitude])); projected.forEach((coordinate, index) => { const feature = new Feature(new Point(coordinate)); feature.setProperties({ kind: "result-point", name: points[index].label, point: points[index] }); resultSource.addFeature(feature); }); if (projected.length > 1) { const line = new Feature(new LineString(projected)); line.set("kind", "result-line"); resultSource.addFeature(line); } if (projected.length) { const extent = resultSource.getExtent(); if (extent) map.getView().fit(extent, { padding: [70, 70, 70, 70], maxZoom: 18, duration: 350 }); } }
+export function showPoints(map: Map, points: ConvertedCoordinate[]): void { resultSource.clear(); const projected = points.map((point) => fromLonLat([point.longitude, point.latitude])); projected.forEach((coordinate, index) => { const feature = new Feature(new Point(coordinate)); feature.setProperties({ kind: "result-point", name: points[index].label, point: points[index] }); resultSource.addFeature(feature); }); if (projected.length) { const extent = resultSource.getExtent(); if (extent) map.getView().fit(extent, { padding: [70, 70, 70, 70], maxZoom: 18, duration: 350 }); } }
 
 export function setEditorMode(map: Map, mode: EditorMode, preset: FeaturePreset, callbacks: { created: (feature: Feature<Geometry>) => void; modified: () => void }): void {
   cancelEditorMode(map); activePreset = preset;
