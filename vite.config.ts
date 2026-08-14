@@ -26,8 +26,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,geojson}"],
+        globIgnores: ["**/data/reference/**"],
         maximumFileSizeToCacheInBytes: 9 * 1024 * 1024,
         runtimeCaching: [
+          {
+            urlPattern: /\/data\/reference\/.*\.geojson$/,
+            handler: "CacheFirst",
+            options: { cacheName: "zhilian-reference-layers" }
+          },
           {
             urlPattern: /^https:\/\/wmts\.nlsc\.gov\.tw\//,
             handler: "NetworkOnly"

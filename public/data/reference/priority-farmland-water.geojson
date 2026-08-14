@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "關注農田圳溝或埤塘池沼",
+"xy_coordinate_resolution": 1e-06,
+"features": [
+{"type":"Feature","properties":{"OBJECTID":38,"Join_Count":1,"GridID":17319,"species":"溪流細鯽","sname":"Aphyocypris amnis","X":120.91999,"Y":23.85931,"X_97":241850.828,"Y_97":2639444.554,"Source":"The Fish Database of Taiwan","descriptio":null},"geometry":{"type":"Polygon","coordinates":[[[120.921452,23.864326],[120.911633,23.864321],[120.911639,23.855291],[120.921457,23.855297],[120.921452,23.864326]]]}}
+]
+}
